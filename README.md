@@ -1,2 +1,2 @@
 # meshmesh
-iroh + willow chat messaging app
+messaging app so we can get off discord

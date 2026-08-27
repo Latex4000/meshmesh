@@ -1,9 +1,10 @@
+use std::println;
+
+use anyhow::anyhow;
 use iroh::{endpoint::Connection, protocol::AcceptError};
+use iroh_tickets::{Ticket, endpoint::EndpointTicket};
 
 pub const ALPN: &[u8] = b"meshmesh/1";
-
-pub mod acceptor;
-pub mod connector;
 
 #[derive(Debug, Clone)]
 pub struct Protocol;
@@ -37,6 +38,56 @@ impl iroh::protocol::ProtocolHandler for Protocol {
 
         Ok(())
     }
+}
+
+pub async fn connect() -> anyhow::Result<()> {
+    let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
+    endpoint.online().await;
+
+    let ticket = EndpointTicket::new(endpoint.addr());
+    println!("{ticket}");
+
+    // Scan for ticket
+    let mut connecting_ticket = String::new();
+    println!("Provide a ticket to connect to, or send your ticket to someone else");
+    std::io::stdin()
+        .read_line(&mut connecting_ticket)
+        .unwrap_or_default();
+
+    // Open a connection to the accepting endpoint
+    let ticket = EndpointTicket::decode_string(&connecting_ticket)
+        .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+    let conn = endpoint
+        .connect(ticket.endpoint_addr().clone(), crate::ALPN)
+        .await?;
+
+    // Open a bidirectional QUIC stream
+    let (mut send, mut recv) = conn.open_bi().await?;
+
+    // Send some data to be echoed
+    send.write_all(b"Hello, world!").await?;
+
+    // Signal the end of data for this particular stream
+    send.finish()?;
+
+    // Receive the echo, but limit reading up to maximum 1000 bytes
+    let response = recv.read_to_end(1000).await?;
+    assert_eq!(&response, b"Hello, world!");
+
+    // Explicitly close the whole connection.
+    conn.close(0u32.into(), b"bye!");
+
+    // The above call only queues a close message to be sent (see how it's not async!).
+    // We need to actually call this to make sure this message is sent out.
+    tokio::signal::ctrl_c().await?;
+    endpoint.close().await;
+
+    // If we don't call this, but continue using the endpoint, we then the queued
+    // close call will eventually be picked up and sent.
+    // But always try to wait for endpoint.close().await to go through before dropping
+    // the endpoint to ensure any queued messages are sent through and connections are
+    // closed gracefully.
+    Ok(())
 }
 
 pub fn add(left: u64, right: u64) -> u64 {

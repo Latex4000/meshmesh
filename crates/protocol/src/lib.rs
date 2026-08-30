@@ -55,11 +55,14 @@ pub async fn connect() -> anyhow::Result<()> {
         .unwrap_or_default();
 
     // Open a connection to the accepting endpoint
-    let ticket = EndpointTicket::decode_string(&connecting_ticket)
+    let connecting_ticket = connecting_ticket.trim();
+    let ticket = EndpointTicket::decode_string(connecting_ticket)
         .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
     let conn = endpoint
         .connect(ticket.endpoint_addr().clone(), crate::ALPN)
         .await?;
+
+    println!("Connected.");
 
     // Open a bidirectional QUIC stream
     let (mut send, mut recv) = conn.open_bi().await?;

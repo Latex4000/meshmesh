@@ -42,6 +42,9 @@ impl iroh::protocol::ProtocolHandler for Protocol {
 
 pub async fn connect() -> anyhow::Result<()> {
     let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
+    let router = iroh::protocol::Router::builder(endpoint.clone())
+        .accept(crate::ALPN, crate::Protocol)
+        .spawn();
     endpoint.online().await;
 
     let ticket = EndpointTicket::new(endpoint.addr());
@@ -83,6 +86,7 @@ pub async fn connect() -> anyhow::Result<()> {
     // The above call only queues a close message to be sent (see how it's not async!).
     // We need to actually call this to make sure this message is sent out.
     tokio::signal::ctrl_c().await?;
+    router.shutdown().await?;
     endpoint.close().await;
 
     // If we don't call this, but continue using the endpoint, we then the queued

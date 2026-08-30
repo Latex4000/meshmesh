@@ -10,30 +10,22 @@ pub const ALPN: &[u8] = b"meshmesh/1";
 pub struct Protocol;
 
 impl iroh::protocol::ProtocolHandler for Protocol {
-    /// The `accept` method is called for each incoming connection for our ALPN.
-    ///
-    /// The returned future runs on a newly spawned tokio task, so it can run as long as
-    /// the connection lasts without blocking other connections.
     async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
-        // We can get the remote's endpoint id from the connection.
         let endpoint_id = connection.remote_id();
         println!("accepted connection from {endpoint_id}");
 
-        // Our protocol is a simple request-response protocol, so we expect the
-        // connecting peer to open a single bi-directional stream.
-        let (mut send, mut recv) = connection.accept_bi().await?;
+        let mut recv = connection.accept_uni().await?;
+        let mut buf: Vec<u8> = vec![];
+        match recv.read(&mut buf).await {
+            Ok(_) => {}
+            Err(e) => println!("Error: {}", e),
+        };
+        let buf_str = match str::from_utf8(&buf) {
+            Ok(v) => v,
+            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+        };
+        println!("{}", buf_str);
 
-        // Echo any bytes received back directly.
-        // This will keep copying until the sender signals the end of data on the stream.
-        let bytes_sent = tokio::io::copy(&mut recv, &mut send).await?;
-        println!("Copied over {bytes_sent} byte(s)");
-
-        // By calling `finish` on the send stream we signal that we will not send anything
-        // further, which makes the receive stream on the other end terminate.
-        send.finish()?;
-
-        // Wait until the remote closes the connection, which it does once it
-        // received the response.
         connection.closed().await;
 
         Ok(())
@@ -50,14 +42,12 @@ pub async fn connect() -> anyhow::Result<()> {
     let ticket = EndpointTicket::new(endpoint.addr());
     println!("{ticket}");
 
-    // Scan for ticket
     let mut connecting_ticket = String::new();
     println!("Provide a ticket to connect to, or send your ticket to someone else");
     std::io::stdin()
         .read_line(&mut connecting_ticket)
         .unwrap_or_default();
 
-    // Open a connection to the accepting endpoint
     let connecting_ticket = connecting_ticket.trim();
     let ticket = EndpointTicket::decode_string(connecting_ticket)
         .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
@@ -67,33 +57,18 @@ pub async fn connect() -> anyhow::Result<()> {
 
     println!("Connected.");
 
-    // Open a bidirectional QUIC stream
-    let (mut send, mut recv) = conn.open_bi().await?;
+    let mut send = conn.open_uni().await?;
 
-    // Send some data to be echoed
+    // Send some data
     send.write_all(b"Hello, world!").await?;
-
-    // Signal the end of data for this particular stream
     send.finish()?;
 
-    // Receive the echo, but limit reading up to maximum 1000 bytes
-    let response = recv.read_to_end(1000).await?;
-    assert_eq!(&response, b"Hello, world!");
-
-    // Explicitly close the whole connection.
     conn.close(0u32.into(), b"bye!");
 
-    // The above call only queues a close message to be sent (see how it's not async!).
-    // We need to actually call this to make sure this message is sent out.
     tokio::signal::ctrl_c().await?;
     router.shutdown().await?;
     endpoint.close().await;
 
-    // If we don't call this, but continue using the endpoint, we then the queued
-    // close call will eventually be picked up and sent.
-    // But always try to wait for endpoint.close().await to go through before dropping
-    // the endpoint to ensure any queued messages are sent through and connections are
-    // closed gracefully.
     Ok(())
 }
 

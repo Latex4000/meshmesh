@@ -1,5 +1,5 @@
 use protocol::state::Peer;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ClientState {
     Lobby,
     Direct(u8),

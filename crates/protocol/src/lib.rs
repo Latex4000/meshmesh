@@ -33,7 +33,7 @@ impl iroh::protocol::ProtocolHandler for Protocol {
                 break;
             }
 
-            println!("{} {}", buffer, buffer.len());
+            println!("{buffer}");
         }
 
         Ok(())

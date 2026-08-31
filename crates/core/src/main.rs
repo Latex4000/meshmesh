@@ -161,7 +161,9 @@ async fn send_chat(recipient: u8, str: &str) -> anyhow::Result<()> {
             None => return Err(anyhow!("Could not find peer")),
         };
     }
-    Peer::send_to(peer.unwrap().clone(), str.to_string()).await?;
+    if let Some(peer) = peer {
+        Peer::send_to(peer, str.to_string()).await?;
+    }
 
     Ok(())
 }

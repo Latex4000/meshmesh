@@ -1,10 +1,13 @@
 [package]
-name = "init"
+name = "client"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+rustyline = "*"
 anyhow = "1.0.104"
 tokio = { version = "1.53.1", features = ["full"] }
 tracing-subscriber = "0.3.23"
 protocol = { path = "../protocol" }
+clearscreen = "4.0"
+log = "0.4.34"

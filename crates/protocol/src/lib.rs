@@ -15,8 +15,8 @@ impl iroh::protocol::ProtocolHandler for Protocol {
         let endpoint_id = conn.remote_id();
         println!("accepted connection from {endpoint_id}");
 
-        let mut recv = conn.accept_uni().await?;
         loop {
+            let mut recv = conn.accept_uni().await?;
             let mut buffer = String::new();
             if let Err(e) = recv.read_to_string(&mut buffer).await {
                 println!("Error: {}", e);
@@ -29,10 +29,11 @@ impl iroh::protocol::ProtocolHandler for Protocol {
 
             if buffer == "0" {
                 conn.close(0u32.into(), b"bye!");
+                println!("Connection ended");
                 break;
             }
 
-            println!("{buffer}");
+            println!("{} {}", buffer, buffer.len());
         }
 
         Ok(())
@@ -65,23 +66,22 @@ pub async fn connect() -> anyhow::Result<()> {
     println!("Connected.");
 
     // Send some data
-    let mut send = conn.open_uni().await?;
     loop {
         let mut send_text = String::new();
         std::io::stdin()
             .read_line(&mut send_text)
             .unwrap_or_default();
-        send.write_all(&send_text.clone().into_bytes()).await?;
+        let send_text = send_text.trim();
+
+        let mut send = conn.open_uni().await?;
+        send.write_all(&send_text.to_string().into_bytes()).await?;
         send.finish()?;
 
         if send_text == "0" {
+            conn.closed().await;
             break;
         }
     }
-
-    conn.closed().await;
-
-    tokio::signal::ctrl_c().await?;
     router.shutdown().await?;
     endpoint.close().await;
 

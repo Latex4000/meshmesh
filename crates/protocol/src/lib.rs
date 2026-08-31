@@ -3,6 +3,7 @@ use std::println;
 use anyhow::anyhow;
 use iroh::{endpoint::Connection, protocol::AcceptError};
 use iroh_tickets::{Ticket, endpoint::EndpointTicket};
+use tokio::io::AsyncReadExt;
 
 pub const ALPN: &[u8] = b"meshmesh/1";
 
@@ -10,23 +11,29 @@ pub const ALPN: &[u8] = b"meshmesh/1";
 pub struct Protocol;
 
 impl iroh::protocol::ProtocolHandler for Protocol {
-    async fn accept(&self, connection: Connection) -> Result<(), AcceptError> {
-        let endpoint_id = connection.remote_id();
+    async fn accept(&self, conn: Connection) -> Result<(), AcceptError> {
+        let endpoint_id = conn.remote_id();
         println!("accepted connection from {endpoint_id}");
 
-        let mut recv = connection.accept_uni().await?;
-        let mut buf: Vec<u8> = vec![];
-        match recv.read(&mut buf).await {
-            Ok(_) => {}
-            Err(e) => println!("Error: {}", e),
-        };
-        let buf_str = match str::from_utf8(&buf) {
-            Ok(v) => v,
-            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        };
-        println!("{}", buf_str);
+        let mut recv = conn.accept_uni().await?;
+        loop {
+            let mut buffer = String::new();
+            if let Err(e) = recv.read_to_string(&mut buffer).await {
+                println!("Error: {}", e);
+                continue;
+            };
 
-        connection.closed().await;
+            if buffer.is_empty() {
+                continue;
+            }
+
+            if buffer == "0" {
+                conn.close(0u32.into(), b"bye!");
+                break;
+            }
+
+            println!("{buffer}");
+        }
 
         Ok(())
     }
@@ -57,13 +64,22 @@ pub async fn connect() -> anyhow::Result<()> {
 
     println!("Connected.");
 
-    let mut send = conn.open_uni().await?;
-
     // Send some data
-    send.write_all(b"Hello, world!").await?;
-    send.finish()?;
+    let mut send = conn.open_uni().await?;
+    loop {
+        let mut send_text = String::new();
+        std::io::stdin()
+            .read_line(&mut send_text)
+            .unwrap_or_default();
+        send.write_all(&send_text.clone().into_bytes()).await?;
+        send.finish()?;
 
-    conn.close(0u32.into(), b"bye!");
+        if send_text == "0" {
+            break;
+        }
+    }
+
+    conn.closed().await;
 
     tokio::signal::ctrl_c().await?;
     router.shutdown().await?;

@@ -18,7 +18,7 @@ impl Peer {
         let id = rng.gen_range(0..255);
 
         Self {
-            id: id.into(),
+            id,
             ticket,
             rooms: [0, 0, 0, 0, 0],
         }

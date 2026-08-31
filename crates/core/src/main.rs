@@ -7,9 +7,9 @@ use log::info;
 use protocol::state::Peer;
 use rustyline::{DefaultEditor, Editor, error::ReadlineError, history::FileHistory};
 
-use std::sync::{LazyLock, Mutex, OnceLock};
+use tokio::sync::{Mutex, OnceCell};
 //static PROTO_CTX: LazyLock<Context> = LazyLock::new(|| {});
-static CLIENT_CTX: OnceLock<Mutex<Context>> = OnceLock::new();
+static CLIENT_CTX: OnceCell<Mutex<Context>> = OnceCell::const_new();
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -30,24 +30,22 @@ async fn command_line() -> anyhow::Result<()> {
 
     loop {
         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-        if let Ok(ctx) = mutex.lock() {
-            match ctx.state {
-                client::state::ClientState::Lobby => {
-                    drop(ctx);
-                    do_lobby(&mut rl).await?
-                }
-                client::state::ClientState::Direct(_) => {
-                    drop(ctx);
-                    do_direct(&mut rl).await?
-                }
-                client::state::ClientState::Room(_) => {
-                    drop(ctx);
-                    do_room(&mut rl).await?
-                }
-            };
-        }
+        let ctx = mutex.lock().await;
+        match ctx.state {
+            client::state::ClientState::Lobby => {
+                drop(ctx);
+                do_lobby(&mut rl).await?
+            }
+            client::state::ClientState::Direct(_) => {
+                drop(ctx);
+                do_direct(&mut rl).await?
+            }
+            client::state::ClientState::Room(_) => {
+                drop(ctx);
+                do_room(&rl).await?
+            }
+        };
     }
-    Ok(())
 }
 
 async fn do_lobby(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
@@ -66,25 +64,23 @@ async fn do_lobby(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
 
             match cmd {
                 "help" => println!(
-                    "cmds: help, state , peers , discover <ep> , join <roomid> , ping <peerid> , pingall , exit"
+                    "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
                 ),
                 "discover" => discover_peer(&args.join(" ")).await?,
                 "peers" => {
                     let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                    if let Ok(ctx) = mutex.lock() {
-                        println!(
-                            "\n Peers: {:?}",
-                            ctx.peers.iter().map(|x| x.id).collect::<Vec<_>>()
-                        )
-                    }
+                    let ctx = mutex.lock().await;
+                    println!(
+                        "\n Peers: {:?}",
+                        ctx.peers.iter().map(|x| x.id).collect::<Vec<_>>()
+                    )
                 }
                 "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
                 "cls" => clearscreen::clear().expect("failed to clear screen"),
                 "direct" => {
                     let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                    if let Ok(mut ctx) = mutex.lock() {
-                        ctx.state = Direct(args.join(" ").parse()?);
-                    }
+                    let mut ctx = mutex.lock().await;
+                    ctx.state = Direct(args.join(" ").parse()?);
                 }
                 "exit" | "quit" => {}
                 _ => {}
@@ -101,7 +97,7 @@ async fn do_lobby(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
 }
 async fn do_direct(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
     let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-    let mut ctx = mutex.lock().unwrap();
+    let mut ctx = mutex.lock().await;
     if let ClientState::Direct(recipient) = ctx.state {
         let readline = rl.readline(&format!("meshmesh (direct to {})> ", recipient).to_string());
         match readline {
@@ -146,12 +142,13 @@ async fn do_direct(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(unused_variables)]
 async fn do_room(rl: &Editor<(), FileHistory>) -> anyhow::Result<()> {
     todo!()
 }
 async fn send_chat(recipient: u8, str: &str) -> anyhow::Result<()> {
     if let Some(mutex) = CLIENT_CTX.get() {
-        let ctx = mutex.lock().unwrap();
+        let ctx = mutex.lock().await;
         let peer = ctx.peers.iter().find(|x| x.id == recipient).unwrap();
         Peer::send_to(peer.clone(), str.to_string()).await?;
     }
@@ -159,16 +156,18 @@ async fn send_chat(recipient: u8, str: &str) -> anyhow::Result<()> {
     Ok(())
 }
 async fn discover_peer(ticket: &str) -> anyhow::Result<()> {
-    if let Some(peer) = Peer::discover(ticket).await? {
-        if let Some(mutex) = CLIENT_CTX.get() {
-            info!("Adding peer -> {:?}", peer);
-            let mut ctx = mutex.lock().unwrap();
-            ctx.peers.push(peer.clone());
-        }
+    if let Some(peer) = Peer::discover(ticket).await?
+        && let Some(mutex) = CLIENT_CTX.get()
+    {
+        info!("Adding peer -> {:?}", peer);
+        let mut ctx = mutex.lock().await;
+        ctx.peers.push(peer.clone());
     }
 
     Ok(())
 }
+#[expect(dead_code)]
+#[allow(unused_variables)]
 fn ping_peer(id: u8) -> anyhow::Result<()> {
     todo!()
 }

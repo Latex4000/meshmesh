@@ -2,8 +2,6 @@ pub mod codec;
 pub mod format;
 pub mod state;
 
-use std::println;
-
 use crate::codec::codec;
 use crate::format::{Request, Response};
 use crate::state::Peer;
@@ -16,7 +14,6 @@ use iroh_tickets::{Ticket, endpoint::EndpointTicket};
 use log::info;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use tokio::io::AsyncReadExt;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 pub const ALPN: &[u8] = b"meshmesh/1";
 static ROUTER: tokio::sync::OnceCell<iroh::protocol::Router> = tokio::sync::OnceCell::const_new();
@@ -46,7 +43,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                     Response::ACK
                 }
             };
-            write_msg(&mut tx, &resp).await;
+            let _ = write_msg(&mut tx, &resp).await;
             tx.close().await?;
         }
 
@@ -105,9 +102,9 @@ impl Peer {
         tx.close().await?;
 
         match read_msg::<Response>(&mut rx).await? {
-            Some(Response::ACK) => return Ok(()),
+            Some(Response::ACK) => Ok(()),
             other => bail!("{other:?}"),
-        };
+        }
     }
     pub async fn discover(ticket: &str) -> anyhow::Result<Option<Peer>> {
         let ticket = EndpointTicket::decode_string(ticket)

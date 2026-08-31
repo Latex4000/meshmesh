@@ -66,9 +66,18 @@ async fn do_lobby(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
 
             match cmd {
                 "help" => println!(
-                    "cmds: help, state , discover <ep> , join <roomid> , ping <peerid> , pingall , exit"
+                    "cmds: help, state , peers , discover <ep> , join <roomid> , ping <peerid> , pingall , exit"
                 ),
                 "discover" => discover_peer(&args.join(" ")).await?,
+                "peers" => {
+                    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                    if let Ok(ctx) = mutex.lock() {
+                        println!(
+                            "\n Peers: {:?}",
+                            ctx.peers.iter().map(|x| x.id).collect::<Vec<_>>()
+                        )
+                    }
+                }
                 "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
                 "cls" => clearscreen::clear().expect("failed to clear screen"),
                 "direct" => {
@@ -109,7 +118,7 @@ async fn do_direct(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
 
                 match cmd {
                     "help" => println!(
-                        "cmds: help, state , discover <ep> , join <roomid> , ping <peerid> , pingall , exit"
+                        "cmds: help, state , peers , discover <ep> , join <roomid> , ping <peerid> , pingall , exit"
                     ),
                     "discover" => discover_peer(&args.join(" ")).await?,
                     "state" => {

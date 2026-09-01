@@ -50,7 +50,7 @@ async fn command_line() -> anyhow::Result<()> {
 
                 match cmd {
                     "help" => println!(
-                        "cmds: help, state, peers, ping <peerid/ep>, discover <ep>, join <roomid>, direct <peerid>, pingall, exit"
+                        "cmds: help, state, peers, ping <peerid/ep>, discover <ep>, join <roomid>, direct <peerid>, pingall, clearpeers, exit"
                     ),
                     "discover" => {
                         if let Err(e) = Peer::discover(&args.join(" ")).await {
@@ -84,6 +84,12 @@ async fn command_line() -> anyhow::Result<()> {
                                 Ok(id) => println!("You have not discovered peer ID {id}"),
                                 Err(e) => println!("Could not connect to ID.\n{e}"),
                             }
+                        }
+                    }
+                    "clearpeers" => {
+                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        if let Ok(mut ctx) = mutex.lock() {
+                            ctx.peers.clear();
                         }
                     }
                     _ => match client_window {

@@ -8,12 +8,33 @@ use protocol::{
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
 
+#[cfg(feature = "gui")]
+use dioxus_native::prelude::*;
+
+#[cfg(not(feature = "gui"))]
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     protocol::init().await?;
     command_line().await?;
     Ok(())
+}
+
+#[cfg(feature = "gui")]
+fn main() {
+    tracing_subscriber::fmt::init();
+    dioxus_native::launch(App);
+}
+
+
+#[cfg(feature = "gui")]
+#[component]
+fn App() -> Element {
+    rsx! {
+        div {
+            h1 { "welcome to my app" }
+        }
+    }
 }
 
 async fn command_line() -> anyhow::Result<()> {

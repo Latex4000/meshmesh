@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::state::PeerInfo;
@@ -11,7 +12,7 @@ pub enum Request {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
-    Pong(),
+    Pong(DateTime<Utc>),
     Discover(PeerInfo),
     Err(String),
     ACK,

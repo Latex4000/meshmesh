@@ -8,6 +8,7 @@ use crate::codec::codec;
 use crate::format::{Request, Response};
 use crate::state::Peer;
 use anyhow::{anyhow, bail};
+use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use iroh::endpoint::{RecvStream, SendStream};
 use iroh::{endpoint::Connection, protocol::AcceptError};
@@ -47,7 +48,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                         ctx.peers.insert(peer_info.id, peer_info);
                         Response::Discover(ctx.get_info())
                     }
-                    Request::Ping => Response::Pong(),
+                    Request::Ping => Response::Pong(Utc::now()),
                     Request::Direct(data) => {
                         info!("got dm -> {data}");
                         Response::ACK
@@ -157,6 +158,48 @@ impl Peer {
                 let mutex = CLIENT_CTX.get().unwrap();
                 let mut ctx = mutex.lock().unwrap();
                 ctx.peers.insert(peer_info.id, peer_info);
+            }
+            _ => eprintln!("closed without replying"),
+        }
+        tx.close().await?;
+        Ok(())
+    }
+
+    pub async fn ping(ticket: &str) -> anyhow::Result<()> {
+        let self_info;
+        {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let ctx = mutex.lock().unwrap();
+            self_info = ctx.get_info();
+        }
+
+        if self_info.ticket == ticket {
+            bail!("Can't connect to yourself");
+        }
+
+        let ticket = EndpointTicket::decode_string(ticket)
+            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let conn = ENDPOINT
+            .get()
+            .unwrap()
+            .connect(ticket.endpoint_addr().clone(), crate::ALPN)
+            .await?;
+        let (send, recv) = conn.open_bi().await?;
+        let (mut tx, mut rx) = (
+            FramedWrite::new(send, codec()),
+            FramedRead::new(recv, codec()),
+        );
+        let init_time = Utc::now();
+        write_msg(&mut tx, &Request::Ping).await?;
+
+        match read_msg::<Response>(&mut rx).await? {
+            Some(Response::Pong(final_time)) => {
+                println!(
+                    "Pong: {}ms",
+                    final_time
+                        .signed_duration_since(init_time)
+                        .num_milliseconds()
+                )
             }
             _ => eprintln!("closed without replying"),
         }

@@ -57,6 +57,11 @@ async fn command_line() -> anyhow::Result<()> {
                             println!("{e}");
                         }
                     }
+                    "ping" => {
+                        if let Err(e) = Peer::ping(&args.join(" ")).await {
+                            println!("{e}");
+                        }
+                    }
                     "peers" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(ctx) = mutex.lock() {

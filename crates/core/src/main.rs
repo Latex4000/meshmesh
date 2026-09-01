@@ -5,7 +5,7 @@ use client::state::{
 };
 use log::info;
 use protocol::state::Peer;
-use rustyline::{DefaultEditor, Editor, error::ReadlineError, history::FileHistory};
+use rustyline::{DefaultEditor, error::ReadlineError};
 
 use std::sync::{Mutex, OnceLock};
 // use std::sync::{LazyLock};
@@ -35,74 +35,17 @@ async fn command_line() -> anyhow::Result<()> {
         if let Ok(ctx) = mutex.lock() {
             client_state = ctx.state.clone();
         }
-        match client_state {
-            Lobby => do_lobby(&mut rl).await?,
-            Direct(_) => do_direct(&mut rl).await?,
-            Room(_) => do_room(&rl).await?,
-        }
-    }
-}
 
-async fn do_lobby(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
-    let readline = rl.readline("meshmesh (lobby)> ");
-    match readline {
-        Ok(line) => {
-            let line = line.trim();
-            if line.is_empty() {
-                return Ok(());
-            }
-            rl.add_history_entry(line)?;
-
-            let mut parts = line.split_whitespace();
-            let cmd = parts.next().unwrap_or("");
-            let args: Vec<&str> = parts.collect();
-
-            match cmd {
-                "help" => println!(
-                    "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
-                ),
-                "discover" => discover_peer(&args.join(" ")).await?,
-                "peers" => {
-                    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                    if let Ok(ctx) = mutex.lock() {
-                        println!(
-                            "\n Peers: {:?}",
-                            ctx.peers.iter().map(|x| x.id).collect::<Vec<_>>()
-                        )
-                    }
-                }
-                "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
-                "cls" => clearscreen::clear().expect("failed to clear screen"),
-                "direct" => {
-                    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                    if let Ok(mut ctx) = mutex.lock() {
-                        ctx.state = Direct(args.join(" ").parse()?);
-                    }
-                }
-                "exit" | "quit" => {}
-                _ => {}
-            }
-        }
-        Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-            bail!("quit");
-        }
-        Err(err) => {
-            println!("Error: {err}");
-        }
-    }
-    Ok(())
-}
-async fn do_direct(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
-    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-    let mut recipient_opt = None;
-    if let Ok(ctx) = mutex.lock()
-        && let Direct(recipient) = ctx.state
-    {
-        recipient_opt = Some(recipient);
-    }
-
-    if let Some(recipient) = recipient_opt {
-        let readline = rl.readline(&format!("meshmesh (direct to {})> ", recipient).to_string());
+        let recipient_opt = get_recipient();
+        let readline_text = match client_state {
+            Lobby => "meshmesh (lobby)> ".to_string(),
+            Direct(_) => match recipient_opt {
+                Some(recipient) => format!("meshmesh (direct to {})> ", recipient),
+                None => "meshmesh (direct to UNKNOWN)> ".to_string(),
+            },
+            Room(_) => "".to_string(),
+        };
+        let readline = rl.readline(&readline_text);
         match readline {
             Ok(line) => {
                 let line = line.trim();
@@ -120,19 +63,31 @@ async fn do_direct(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
                         "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
                     ),
                     "discover" => discover_peer(&args.join(" ")).await?,
-                    "state" => {
-                        println!("{:?}", CLIENT_CTX.get().unwrap())
-                    }
-                    "cls" => clearscreen::clear().expect("failed to clear screen"),
-                    "exit" | "quit" => {
+                    "peers" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                        if let Ok(mut ctx) = mutex.lock() {
-                            ctx.state = Lobby;
+                        if let Ok(ctx) = mutex.lock() {
+                            println!(
+                                "\n Peers: {:?}",
+                                ctx.peers.iter().map(|x| x.id).collect::<Vec<_>>()
+                            )
                         }
                     }
-                    _ => {
-                        send_chat(recipient, line).await?;
+                    "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
+                    "cls" => clearscreen::clear().expect("failed to clear screen"),
+                    "direct" => {
+                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        if let Ok(mut ctx) = mutex.lock() {
+                            match args.join(" ").parse() {
+                                Ok(id) => ctx.state = Direct(id),
+                                Err(e) => println!("Could not connect to ID.\n{e}"),
+                            }
+                        }
                     }
+                    _ => match client_state {
+                        Lobby => lobby_cmds(line, cmd, args)?,
+                        Direct(_) => direct_cmds(line, cmd, args).await?,
+                        Room(_) => room_cmds(line, cmd, args)?,
+                    },
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -143,14 +98,45 @@ async fn do_direct(rl: &mut Editor<(), FileHistory>) -> anyhow::Result<()> {
             }
         }
     }
+}
 
-    Ok(())
+fn get_recipient() -> Option<u8> {
+    if let Some(mutex) = CLIENT_CTX.get()
+        && let Ok(ctx) = mutex.lock()
+        && let Direct(recipient) = ctx.state
+    {
+        Some(recipient)
+    } else {
+        None
+    }
 }
 
 #[allow(unused_variables)]
-async fn do_room(rl: &Editor<(), FileHistory>) -> anyhow::Result<()> {
-    todo!()
+fn lobby_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+    Ok(())
 }
+#[allow(unused_variables)]
+async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+    match cmd {
+        "exit" | "quit" => {
+            if let Ok(mut ctx) = mutex.lock() {
+                ctx.state = Lobby;
+            }
+        }
+        _ => {
+            if let Some(recipient) = get_recipient() {
+                send_chat(recipient, line).await?;
+            }
+        }
+    }
+    Ok(())
+}
+#[allow(unused_variables)]
+fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+    todo!();
+}
+
 async fn send_chat(recipient: u8, str: &str) -> anyhow::Result<()> {
     let mut peer: Option<Peer> = None;
     if let Some(mutex) = CLIENT_CTX.get()

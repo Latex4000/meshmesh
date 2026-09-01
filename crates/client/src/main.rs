@@ -50,7 +50,7 @@ async fn command_line() -> anyhow::Result<()> {
 
                 match cmd {
                     "help" => println!(
-                        "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
+                        "cmds: help, state, peers, ping <peerid/ep>, discover <ep>, join <roomid>, direct <peerid>, pingall, exit"
                     ),
                     "discover" => {
                         if let Err(e) = Peer::discover(&args.join(" ")).await {

@@ -177,7 +177,18 @@ impl Peer {
             bail!("Can't connect to yourself");
         }
 
-        let ticket = EndpointTicket::decode_string(ticket)
+        let ticket_str = match ticket.parse::<u8>() {
+            Ok(peer_id) => {
+                let mutex = CLIENT_CTX.get().unwrap();
+                let ctx = mutex.lock().unwrap();
+                match ctx.peers.get(&peer_id) {
+                    Some(peer) => peer.ticket.clone(),
+                    None => bail!("Could not find peer"),
+                }
+            }
+            Err(_) => ticket.to_string(),
+        };
+        let ticket = EndpointTicket::decode_string(&ticket_str)
             .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
         let conn = ENDPOINT
             .get()

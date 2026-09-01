@@ -75,7 +75,10 @@ async fn command_line() -> anyhow::Result<()> {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(mut ctx) = mutex.lock() {
                             match args.join(" ").parse() {
-                                Ok(id) => ctx.window = Direct(id),
+                                Ok(id) => match ctx.peers.get_key_value(&id) {
+                                    Some(_) => ctx.window = Direct(id),
+                                    None => println!("You have not discovered peer ID {id}"),
+                                },
                                 Err(e) => println!("Could not connect to ID.\n{e}"),
                             }
                         }

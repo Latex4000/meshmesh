@@ -57,10 +57,7 @@ async fn command_line() -> anyhow::Result<()> {
                     "peers" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(ctx) = mutex.lock() {
-                            println!(
-                                "\n Peers: {:?}",
-                                ctx.peers.iter().map(|x| x.id).collect::<Vec<_>>()
-                            )
+                            println!("\n Peers: {:?}", ctx.peers.keys().collect::<Vec<_>>())
                         }
                     }
                     "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
@@ -133,7 +130,7 @@ async fn send_chat(recipient: u8, str: &str) -> anyhow::Result<()> {
     if let Some(mutex) = CLIENT_CTX.get()
         && let Ok(ctx) = mutex.lock()
     {
-        match ctx.peers.iter().find(|x| x.id == recipient) {
+        match ctx.peers.get(&recipient) {
             Some(p) => peer = Some(p.clone()),
             None => return Err(anyhow!("Could not find peer")),
         };
@@ -150,7 +147,7 @@ async fn discover_peer(ticket: &str) -> anyhow::Result<()> {
         && let Ok(mut ctx) = mutex.lock()
     {
         info!("Adding peer -> {:?}", peer);
-        ctx.peers.push(peer.clone());
+        ctx.peers.insert(peer.id, peer.clone());
     }
 
     Ok(())

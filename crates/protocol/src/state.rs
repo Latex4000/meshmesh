@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +16,7 @@ pub struct Peer {
     pub ticket: String,
     pub rooms: [u8; 5],
     pub window: ClientWindow,
-    pub peers: Vec<Peer>,
+    pub peers: HashMap<u8, Peer>,
 }
 
 #[derive(Debug)]
@@ -33,7 +35,7 @@ impl Peer {
             ticket,
             rooms: [0, 0, 0, 0, 0],
             window: ClientWindow::Lobby,
-            peers: Vec::new(),
+            peers: HashMap::new(),
         }
     }
 }

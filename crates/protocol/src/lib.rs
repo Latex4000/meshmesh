@@ -101,7 +101,7 @@ impl Peer {
             let mutex = CLIENT_CTX.get().unwrap();
             let ctx = mutex.lock().unwrap();
             let Some(some_peer) = ctx.peers.get(&recipient) else {
-                return Ok(());
+                bail!("Peer not found")
             };
             peer = some_peer.clone();
         }

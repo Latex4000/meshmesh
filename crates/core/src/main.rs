@@ -52,10 +52,11 @@ async fn command_line() -> anyhow::Result<()> {
                     "help" => println!(
                         "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
                     ),
-                    "discover" => match Peer::discover(&args.join(" ")).await {
-                        Ok(_) => {}
-                        Err(e) => println!("{e}"),
-                    },
+                    "discover" => {
+                        if let Err(e) = Peer::discover(&args.join(" ")).await {
+                            println!("{e}");
+                        }
+                    }
                     "peers" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(ctx) = mutex.lock() {
@@ -121,8 +122,10 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<(
             }
         }
         _ => {
-            if let Some(recipient) = get_recipient() {
-                Peer::send_to(recipient, line.to_string()).await?;
+            if let Some(recipient) = get_recipient()
+                && let Err(e) = Peer::send_to(recipient, line.to_string()).await
+            {
+                println!("{e}");
             }
         }
     }

@@ -51,7 +51,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                             responses.push(Response::Discover(peer.1.clone()));
                         }
                     }
-                    Request::Ping => responses.push(responses.push(Response::Pong(Utc::now()))),
+                    Request::Ping => responses.push(Response::Pong(Utc::now())),
                     Request::Direct(data) => {
                         info!("got dm -> {data}");
                         responses.push(Response::ACK);

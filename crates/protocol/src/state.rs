@@ -11,18 +11,18 @@ pub enum ClientWindow {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PeerInfo {
+    pub id: u8,
+    pub ticket: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Peer {
     pub id: u8,
     pub ticket: String,
     pub rooms: [u8; 5],
     pub window: ClientWindow,
-    pub peers: HashMap<u8, Peer>,
-}
-
-#[derive(Debug)]
-pub struct Room {
-    pub id: u8,
-    pub members: [u8; 5],
+    pub peers: HashMap<u8, PeerInfo>,
 }
 
 impl Peer {
@@ -38,4 +38,17 @@ impl Peer {
             peers: HashMap::new(),
         }
     }
+
+    pub fn get_info(&self) -> PeerInfo {
+        PeerInfo {
+            id: self.id,
+            ticket: self.ticket.clone(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Room {
+    pub id: u8,
+    pub members: [u8; 5],
 }

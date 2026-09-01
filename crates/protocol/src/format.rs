@@ -1,10 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use crate::state::Peer;
+use crate::state::PeerInfo;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
-    GetDiscover(String),
+    GetDiscover(PeerInfo),
     Ping,
     Direct(String),
 }
@@ -12,7 +12,7 @@ pub enum Request {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Response {
     Pong(),
-    Discover(Peer),
+    Discover(PeerInfo),
     Err(String),
     ACK,
 }

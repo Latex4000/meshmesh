@@ -41,9 +41,12 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
             {
                 // Considering we'll probably need the ctx for other requests/responses I left it outside the match instead of inside GetDiscover
                 let mutex = CLIENT_CTX.get().unwrap();
-                let ctx = mutex.lock().unwrap();
+                let mut ctx = mutex.lock().unwrap();
                 resp = match req {
-                    Request::GetDiscover(_) => Response::Discover(ctx.clone()),
+                    Request::GetDiscover(peer_info) => {
+                        ctx.peers.insert(peer_info.id, peer_info);
+                        Response::Discover(ctx.get_info())
+                    }
                     Request::Ping => Response::Pong(),
                     Request::Direct(data) => {
                         info!("got dm -> {data}");
@@ -136,19 +139,19 @@ impl Peer {
             FramedWrite::new(send, codec()),
             FramedRead::new(recv, codec()),
         );
-        let ticket;
+        let self_info;
         {
             let mutex = CLIENT_CTX.get().unwrap();
             let ctx = mutex.lock().unwrap();
-            ticket = ctx.ticket.clone();
+            self_info = ctx.get_info();
         }
-        write_msg(&mut tx, &Request::GetDiscover(ticket)).await?;
+        write_msg(&mut tx, &Request::GetDiscover(self_info)).await?;
 
         match read_msg::<Response>(&mut rx).await? {
-            Some(Response::Discover(peer)) => {
+            Some(Response::Discover(peer_info)) => {
                 let mutex = CLIENT_CTX.get().unwrap();
                 let mut ctx = mutex.lock().unwrap();
-                ctx.peers.insert(peer.id, peer);
+                ctx.peers.insert(peer_info.id, peer_info);
             }
             _ => eprintln!("closed without replying"),
         }

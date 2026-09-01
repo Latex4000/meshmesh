@@ -37,24 +37,30 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                 return Ok(()); // peer opened a stream and closed it without asking anything
             };
 
-            let resp;
+            let mut responses = Vec::new();
             {
                 // Considering we'll probably need the ctx for other requests/responses I left it outside the match instead of inside GetDiscover
                 let mutex = CLIENT_CTX.get().unwrap();
                 let mut ctx = mutex.lock().unwrap();
-                resp = match req {
+                match req {
                     Request::GetDiscover(peer_info) => {
-                        ctx.peers.insert(peer_info.id, peer_info);
-                        Response::Discover(ctx.get_info())
+                        ctx.peers.insert(peer_info.id.clone(), peer_info.clone());
+                        responses.push(Response::Discover(ctx.get_info()));
+                        for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
+                            responses.push(Response::Discover(peer.1.clone()));
+                        }
                     }
-                    Request::Ping => Response::Pong(),
+                    Request::Ping => responses.push(Response::Pong()),
                     Request::Direct(data) => {
                         info!("got dm -> {data}");
-                        Response::ACK
+                        responses.push(Response::ACK);
                     }
                 };
             }
-            let _ = write_msg(&mut tx, &resp).await;
+            for x in responses {
+                let _ = write_msg(&mut tx, &x).await;
+            }
+
             tx.close().await?;
         }
 
@@ -152,13 +158,10 @@ impl Peer {
         );
         write_msg(&mut tx, &Request::GetDiscover(self_info)).await?;
 
-        match read_msg::<Response>(&mut rx).await? {
-            Some(Response::Discover(peer_info)) => {
-                let mutex = CLIENT_CTX.get().unwrap();
-                let mut ctx = mutex.lock().unwrap();
-                ctx.peers.insert(peer_info.id, peer_info);
-            }
-            _ => eprintln!("closed without replying"),
+        while let Some(Response::Discover(peer_info)) = read_msg::<Response>(&mut rx).await? {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let mut ctx = mutex.lock().unwrap();
+            ctx.peers.insert(peer_info.id, peer_info);
         }
         tx.close().await?;
         Ok(())

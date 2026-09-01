@@ -1,43 +1,37 @@
 use anyhow::{Result, anyhow, bail};
-use client::state::{
-    ClientState::{Direct, Lobby, Room},
-    Context,
-};
 use log::info;
-use protocol::state::Peer;
+use protocol::state::{
+    ClientWindow::{Direct, Lobby, Room},
+    Peer,
+};
 use rustyline::{DefaultEditor, error::ReadlineError};
 
 use std::sync::{Mutex, OnceLock};
 // use std::sync::{LazyLock};
 //static PROTO_CTX: LazyLock<Context> = LazyLock::new(|| {});
-static CLIENT_CTX: OnceLock<Mutex<Context>> = OnceLock::new();
+static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
     let peer = protocol::init().await?;
 
-    let ctx = Context {
-        state: Lobby,
-        local: peer,
-        peers: Vec::new(),
-    };
-    CLIENT_CTX.set(Mutex::new(ctx)).unwrap();
+    CLIENT_CTX.set(Mutex::new(peer)).unwrap();
     command_line().await?;
     Ok(())
 }
 
 async fn command_line() -> anyhow::Result<()> {
     let mut rl = DefaultEditor::new()?;
-    let mut client_state = Lobby;
+    let mut client_window = Lobby;
 
     loop {
         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
         if let Ok(ctx) = mutex.lock() {
-            client_state = ctx.state.clone();
+            client_window = ctx.window.clone();
         }
 
         let recipient_opt = get_recipient();
-        let readline_text = match client_state {
+        let readline_text = match client_window {
             Lobby => "meshmesh (lobby)> ".to_string(),
             Direct(_) => match recipient_opt {
                 Some(recipient) => format!("meshmesh (direct to {})> ", recipient),
@@ -78,12 +72,12 @@ async fn command_line() -> anyhow::Result<()> {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(mut ctx) = mutex.lock() {
                             match args.join(" ").parse() {
-                                Ok(id) => ctx.state = Direct(id),
+                                Ok(id) => ctx.window = Direct(id),
                                 Err(e) => println!("Could not connect to ID.\n{e}"),
                             }
                         }
                     }
-                    _ => match client_state {
+                    _ => match client_window {
                         Lobby => lobby_cmds(line, cmd, args)?,
                         Direct(_) => direct_cmds(line, cmd, args).await?,
                         Room(_) => room_cmds(line, cmd, args)?,
@@ -103,7 +97,7 @@ async fn command_line() -> anyhow::Result<()> {
 fn get_recipient() -> Option<u8> {
     if let Some(mutex) = CLIENT_CTX.get()
         && let Ok(ctx) = mutex.lock()
-        && let Direct(recipient) = ctx.state
+        && let Direct(recipient) = ctx.window
     {
         Some(recipient)
     } else {
@@ -121,7 +115,7 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<(
     match cmd {
         "exit" | "quit" => {
             if let Ok(mut ctx) = mutex.lock() {
-                ctx.state = Lobby;
+                ctx.window = Lobby;
             }
         }
         _ => {

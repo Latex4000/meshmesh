@@ -2,6 +2,8 @@ pub mod codec;
 pub mod format;
 pub mod state;
 
+use std::sync::{Mutex, OnceLock};
+
 use crate::codec::codec;
 use crate::format::{Request, Response};
 use crate::state::Peer;
@@ -18,7 +20,7 @@ use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 pub const ALPN: &[u8] = b"meshmesh/1";
 static ROUTER: tokio::sync::OnceCell<iroh::protocol::Router> = tokio::sync::OnceCell::const_new();
 static ENDPOINT: tokio::sync::OnceCell<iroh::Endpoint> = tokio::sync::OnceCell::const_new();
-static LOCAL_PEER: tokio::sync::OnceCell<Peer> = tokio::sync::OnceCell::const_new();
+pub static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
 #[derive(Debug, Clone)]
 pub struct MeshMeshProtocol;
 
@@ -35,14 +37,20 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                 return Ok(()); // peer opened a stream and closed it without asking anything
             };
 
-            let resp = match req {
-                Request::GetDiscover => Response::Discover(LOCAL_PEER.get().unwrap().to_owned()),
-                Request::Ping => Response::Pong(),
-                Request::Direct(data) => {
-                    info!("got dm -> {data}");
-                    Response::ACK
-                }
-            };
+            let resp;
+            {
+                // Considering we'll probably need the ctx for other requests/responses I left it outside the match instead of inside GetDiscover
+                let mutex = CLIENT_CTX.get().unwrap();
+                let ctx = mutex.lock().unwrap();
+                resp = match req {
+                    Request::GetDiscover => Response::Discover(ctx.clone()),
+                    Request::Ping => Response::Pong(),
+                    Request::Direct(data) => {
+                        info!("got dm -> {data}");
+                        Response::ACK
+                    }
+                };
+            }
             let _ = write_msg(&mut tx, &resp).await;
             tx.close().await?;
         }
@@ -51,7 +59,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
     }
 }
 
-pub async fn init() -> anyhow::Result<Peer> {
+pub async fn init() -> anyhow::Result<()> {
     let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
     let router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(crate::ALPN, crate::MeshMeshProtocol)
@@ -62,8 +70,8 @@ pub async fn init() -> anyhow::Result<Peer> {
     let ticket = EndpointTicket::new(endpoint.addr());
     ENDPOINT.set(endpoint).ok();
     let peer = Peer::new(ticket.to_string());
-    LOCAL_PEER.set(peer.clone()).ok();
-    Ok(peer)
+    CLIENT_CTX.set(Mutex::new(peer)).ok();
+    Ok(())
 }
 
 async fn write_msg<T: Serialize>(

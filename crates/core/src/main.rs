@@ -1,21 +1,18 @@
 use anyhow::{Result, anyhow, bail};
 use log::info;
-use protocol::state::{
-    ClientWindow::{Direct, Lobby, Room},
-    Peer,
+use protocol::{
+    CLIENT_CTX,
+    state::{
+        ClientWindow::{Direct, Lobby, Room},
+        Peer,
+    },
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
 
-use std::sync::{Mutex, OnceLock};
-// use std::sync::{LazyLock};
-//static PROTO_CTX: LazyLock<Context> = LazyLock::new(|| {});
-static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
-    let peer = protocol::init().await?;
-
-    CLIENT_CTX.set(Mutex::new(peer)).unwrap();
+    protocol::init().await?;
     command_line().await?;
     Ok(())
 }

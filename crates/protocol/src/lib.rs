@@ -127,6 +127,17 @@ impl Peer {
         }
     }
     pub async fn discover(ticket: &str) -> anyhow::Result<()> {
+        let self_info;
+        {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let ctx = mutex.lock().unwrap();
+            self_info = ctx.get_info();
+        }
+
+        if self_info.ticket == ticket {
+            bail!("Can't connect to yourself");
+        }
+
         let ticket = EndpointTicket::decode_string(ticket)
             .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
         let conn = ENDPOINT
@@ -139,12 +150,6 @@ impl Peer {
             FramedWrite::new(send, codec()),
             FramedRead::new(recv, codec()),
         );
-        let self_info;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            self_info = ctx.get_info();
-        }
         write_msg(&mut tx, &Request::GetDiscover(self_info)).await?;
 
         match read_msg::<Response>(&mut rx).await? {

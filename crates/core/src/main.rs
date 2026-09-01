@@ -52,7 +52,10 @@ async fn command_line() -> anyhow::Result<()> {
                     "help" => println!(
                         "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
                     ),
-                    "discover" => Peer::discover(&args.join(" ")).await?,
+                    "discover" => match Peer::discover(&args.join(" ")).await {
+                        Ok(_) => {}
+                        Err(e) => println!("{e}"),
+                    },
                     "peers" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(ctx) = mutex.lock() {

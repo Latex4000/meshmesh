@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter, Result},
+};
 
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -44,6 +47,12 @@ impl Peer {
             id: self.id,
             ticket: self.ticket.clone(),
         }
+    }
+}
+
+impl Display for Peer {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        write!(f, "ID: {}\nTicket: {}", self.id, self.ticket)
     }
 }
 

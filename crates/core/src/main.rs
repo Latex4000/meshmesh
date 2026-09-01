@@ -60,6 +60,12 @@ async fn command_line() -> anyhow::Result<()> {
                         }
                     }
                     "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
+                    "info" => {
+                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        if let Ok(ctx) = mutex.lock() {
+                            println!("{ctx}")
+                        }
+                    }
                     "cls" => clearscreen::clear().expect("failed to clear screen"),
                     "direct" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;

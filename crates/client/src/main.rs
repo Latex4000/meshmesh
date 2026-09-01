@@ -77,7 +77,7 @@ async fn command_line() -> anyhow::Result<()> {
                             match args.join(" ").parse() {
                                 Ok(id) if ctx.peers.contains_key(&id) => ctx.window = Direct(id),
                                 Ok(id) => println!("You have not discovered peer ID {id}"),
-                                Err(e) => println!("Could not connect to ID.\n{e}"),
+                                Err(e) => println!("Could not parse ID.\n{e}"),
                             }
                         }
                     }

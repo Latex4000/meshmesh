@@ -1,5 +1,4 @@
 use anyhow::{Result, anyhow, bail};
-use log::info;
 use protocol::{
     CLIENT_CTX,
     state::{
@@ -53,7 +52,7 @@ async fn command_line() -> anyhow::Result<()> {
                     "help" => println!(
                         "cmds: help, state, peers, discover <ep>, join <roomid>, ping <peerid>, pingall, exit"
                     ),
-                    "discover" => discover_peer(&args.join(" ")).await?,
+                    "discover" => Peer::discover(&args.join(" ")).await?,
                     "peers" => {
                         let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
                         if let Ok(ctx) = mutex.lock() {
@@ -114,7 +113,7 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<(
         }
         _ => {
             if let Some(recipient) = get_recipient() {
-                send_chat(recipient, line).await?;
+                Peer::send_to(recipient, line.to_string()).await?;
             }
         }
     }
@@ -125,33 +124,6 @@ fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
     todo!();
 }
 
-async fn send_chat(recipient: u8, str: &str) -> anyhow::Result<()> {
-    let mut peer: Option<Peer> = None;
-    if let Some(mutex) = CLIENT_CTX.get()
-        && let Ok(ctx) = mutex.lock()
-    {
-        match ctx.peers.get(&recipient) {
-            Some(p) => peer = Some(p.clone()),
-            None => return Err(anyhow!("Could not find peer")),
-        };
-    }
-    if let Some(peer) = peer {
-        Peer::send_to(peer, str.to_string()).await?;
-    }
-
-    Ok(())
-}
-async fn discover_peer(ticket: &str) -> anyhow::Result<()> {
-    if let Some(peer) = Peer::discover(ticket).await?
-        && let Some(mutex) = CLIENT_CTX.get()
-        && let Ok(mut ctx) = mutex.lock()
-    {
-        info!("Adding peer -> {:?}", peer);
-        ctx.peers.insert(peer.id, peer.clone());
-    }
-
-    Ok(())
-}
 #[expect(dead_code)]
 #[allow(unused_variables)]
 fn ping_peer(id: u8) -> anyhow::Result<()> {

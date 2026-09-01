@@ -4,7 +4,7 @@ use crate::state::Peer;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Request {
-    GetDiscover,
+    GetDiscover(String),
     Ping,
     Direct(String),
 }

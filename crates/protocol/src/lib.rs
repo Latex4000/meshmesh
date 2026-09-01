@@ -43,7 +43,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                 let mutex = CLIENT_CTX.get().unwrap();
                 let ctx = mutex.lock().unwrap();
                 resp = match req {
-                    Request::GetDiscover => Response::Discover(ctx.clone()),
+                    Request::GetDiscover(_) => Response::Discover(ctx.clone()),
                     Request::Ping => Response::Pong(),
                     Request::Direct(data) => {
                         info!("got dm -> {data}");
@@ -92,8 +92,17 @@ async fn read_msg<T: DeserializeOwned>(
 }
 
 impl Peer {
-    pub async fn send_to(recipient: Peer, data: String) -> anyhow::Result<()> {
-        let ticket = EndpointTicket::decode_string(&recipient.ticket)
+    pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
+        let peer;
+        {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let ctx = mutex.lock().unwrap();
+            let Some(some_peer) = ctx.peers.get(&recipient) else {
+                return Ok(());
+            };
+            peer = some_peer.clone();
+        }
+        let ticket = EndpointTicket::decode_string(&peer.ticket)
             .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
         let conn = ENDPOINT
             .get()
@@ -114,7 +123,7 @@ impl Peer {
             other => bail!("{other:?}"),
         }
     }
-    pub async fn discover(ticket: &str) -> anyhow::Result<Option<Peer>> {
+    pub async fn discover(ticket: &str) -> anyhow::Result<()> {
         let ticket = EndpointTicket::decode_string(ticket)
             .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
         let conn = ENDPOINT
@@ -127,15 +136,23 @@ impl Peer {
             FramedWrite::new(send, codec()),
             FramedRead::new(recv, codec()),
         );
-        write_msg(&mut tx, &Request::GetDiscover).await?;
+        let ticket;
+        {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let ctx = mutex.lock().unwrap();
+            ticket = ctx.ticket.clone();
+        }
+        write_msg(&mut tx, &Request::GetDiscover(ticket)).await?;
 
         match read_msg::<Response>(&mut rx).await? {
-            Some(Response::Discover(x)) => {
-                return Ok(Some(x));
+            Some(Response::Discover(peer)) => {
+                let mutex = CLIENT_CTX.get().unwrap();
+                let mut ctx = mutex.lock().unwrap();
+                ctx.peers.insert(peer.id, peer);
             }
             _ => eprintln!("closed without replying"),
         }
         tx.close().await?;
-        Ok(None)
+        Ok(())
     }
 }

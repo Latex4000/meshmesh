@@ -1,7 +1,7 @@
 mod app;
-
-use anyhow::{Result, bail};
 use protocol::{
+    CLIENT_CTX,
+    error::Error,
     state::{
         ClientWindow::{Direct, Lobby, Room},
         Peer,
@@ -28,7 +28,7 @@ fn main() {
     dioxus_native::launch(MeshmeshApp);
 }
 
-async fn command_line() -> anyhow::Result<()> {
+async fn command_line() -> Result<(), Error> {
     let mut rl = DefaultEditor::new()?;
 
     loop {

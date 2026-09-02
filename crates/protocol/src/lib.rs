@@ -1,11 +1,12 @@
 pub mod codec;
+pub mod error;
 pub mod format;
 pub mod state;
 
 use crate::codec::{codec, open_stream, read_msg, write_msg};
+use crate::error::Error;
 use crate::format::{Request, Response};
 use crate::state::Peer;
-use anyhow::{Context, bail};
 use chrono::Utc;
 use futures::SinkExt;
 use iroh::{endpoint::Connection, protocol::AcceptError};
@@ -71,7 +72,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
     }
 }
 
-pub async fn init() -> anyhow::Result<()> {
+pub async fn init() -> Result<(), Error> {
     let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
     let router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(crate::ALPN, crate::MeshMeshProtocol)
@@ -87,7 +88,7 @@ pub async fn init() -> anyhow::Result<()> {
 }
 
 impl Peer {
-    pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
+    pub async fn send_to(recipient: u8, data: String) -> Result<(), Error> {
         let ticket = use_ctx(|ctx| {
             let peer = ctx.peers.get(&recipient)?;
             Some(peer.ticket.clone())
@@ -105,7 +106,7 @@ impl Peer {
             other => bail!("{other:?}"),
         }
     }
-    pub async fn discover(ticket: &str) -> anyhow::Result<()> {
+    pub async fn discover(ticket: &str) -> Result<(), Error> {
         let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
             bail!("Can't connect to yourself");
@@ -122,7 +123,7 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn ping(ticket: &str) -> anyhow::Result<()> {
+    pub async fn ping(ticket: &str) -> Result<(), Error> {
         let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
             bail!("Can't connect to yourself");

@@ -6,7 +6,7 @@ pub mod state;
 use std::sync::{Mutex, OnceLock};
 
 use crate::codec::codec;
-use crate::error::Error;
+use crate::error::Error::{self, NoResponseError, SelfConnectingError, UnexpectedResponseError};
 use crate::format::{Request, Response};
 use crate::state::Peer;
 use chrono::Utc;
@@ -108,13 +108,13 @@ impl Peer {
         {
             let mutex = CLIENT_CTX.get().unwrap();
             let ctx = mutex.lock().unwrap();
-            let Some(some_peer) = ctx.peers.get(&recipient) else {
-                bail!("Peer not found")
-            };
-            peer = some_peer.clone();
+            peer = ctx
+                .peers
+                .get(&recipient)
+                .ok_or(Error::MissingPeerError)?
+                .clone();
         }
-        let ticket = EndpointTicket::decode_string(&peer.ticket)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let ticket = EndpointTicket::decode_string(&peer.ticket)?;
         let conn = ENDPOINT
             .get()
             .unwrap()
@@ -131,7 +131,8 @@ impl Peer {
 
         match read_msg::<Response>(&mut rx).await? {
             Some(Response::ACK) => Ok(()),
-            other => bail!("{other:?}"),
+            Some(other) => Err(UnexpectedResponseError(other)),
+            None => Err(NoResponseError),
         }
     }
     pub async fn discover(ticket: &str) -> Result<(), Error> {
@@ -143,11 +144,10 @@ impl Peer {
         }
 
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
-        let ticket = EndpointTicket::decode_string(ticket)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let ticket = EndpointTicket::decode_string(ticket)?;
         let conn = ENDPOINT
             .get()
             .unwrap()
@@ -178,22 +178,22 @@ impl Peer {
         }
 
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
         let ticket_str = match ticket.parse::<u8>() {
             Ok(peer_id) => {
                 let mutex = CLIENT_CTX.get().unwrap();
                 let ctx = mutex.lock().unwrap();
-                match ctx.peers.get(&peer_id) {
-                    Some(peer) => peer.ticket.clone(),
-                    None => bail!("Could not find peer"),
-                }
+                ctx.peers
+                    .get(&peer_id)
+                    .ok_or(Error::MissingPeerError)?
+                    .ticket
+                    .clone()
             }
             Err(_) => ticket.to_string(),
         };
-        let ticket = EndpointTicket::decode_string(&ticket_str)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let ticket = EndpointTicket::decode_string(&ticket_str)?;
         let conn = ENDPOINT
             .get()
             .unwrap()

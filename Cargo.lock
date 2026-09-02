@@ -5167,6 +5167,7 @@ dependencies = [
  "log",
  "postcard",
  "rand 0.8.8",
+ "rustyline",
  "serde",
  "thiserror 2.0.19",
  "tokio",

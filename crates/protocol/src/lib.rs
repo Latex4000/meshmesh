@@ -46,7 +46,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                 let mut ctx = mutex.lock().unwrap();
                 match req {
                     Request::GetDiscover(peer_info) => {
-                        ctx.peers.insert(peer_info.id.clone(), peer_info.clone());
+                        ctx.peers.insert(peer_info.id, peer_info.clone());
                         responses.push(Response::Discover(ctx.get_info()));
                         for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
                             responses.push(Response::Discover(peer.1.clone()));

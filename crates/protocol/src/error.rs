@@ -5,6 +5,9 @@ use crate::format::Response;
 #[derive(Error, Debug)]
 pub enum Error {
     // own
+    #[error("Could not get/missing mutex")]
+    MissingMutexError,
+
     #[error("Missing peer")]
     MissingPeerError,
 
@@ -36,6 +39,10 @@ pub enum Error {
     // postcard
     #[error("Error from postcard")]
     PostcardError(#[from] postcard::Error),
+
+    // rustyline
+    #[error("Could not get default editor up")]
+    RustylineError(#[from] rustyline::error::ReadlineError),
 
     // others
     #[error("IO error")]

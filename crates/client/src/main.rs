@@ -1,6 +1,6 @@
 use protocol::{
     CLIENT_CTX,
-    error::Error,
+    error::Error::{self, MissingMutexError},
     state::{
         ClientWindow::{Direct, Lobby, Room},
         Peer,
@@ -13,10 +13,16 @@ use dioxus_native::prelude::*;
 
 #[cfg(not(feature = "gui"))]
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), ()> {
     tracing_subscriber::fmt::init();
-    protocol::init().await?;
-    command_line().await?;
+    match protocol::init().await {
+        Ok(_) => {}
+        Err(e) => println!("Error from initializing protocol: {e}"),
+    };
+    match command_line().await {
+        Ok(_) => {}
+        Err(e) => println!("Error from program: {e}"),
+    };
     Ok(())
 }
 
@@ -41,7 +47,7 @@ async fn command_line() -> Result<(), Error> {
     let mut client_window = Lobby;
 
     loop {
-        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+        let mutex = CLIENT_CTX.get().ok_or(MissingMutexError)?;
         if let Ok(ctx) = mutex.lock() {
             client_window = ctx.window.clone();
         }
@@ -83,21 +89,21 @@ async fn command_line() -> Result<(), Error> {
                         }
                     }
                     "peers" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        let mutex = CLIENT_CTX.get().ok_or(MissingMutexError)?;
                         if let Ok(ctx) = mutex.lock() {
                             println!("\n Peers: {:?}", ctx.peers.keys().collect::<Vec<_>>())
                         }
                     }
                     "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
                     "info" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        let mutex = CLIENT_CTX.get().ok_or(MissingMutexError)?;
                         if let Ok(ctx) = mutex.lock() {
                             println!("{ctx}")
                         }
                     }
                     "cls" => clearscreen::clear().expect("failed to clear screen"),
                     "direct" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        let mutex = CLIENT_CTX.get().ok_or(MissingMutexError)?;
                         if let Ok(mut ctx) = mutex.lock() {
                             match args.join(" ").parse() {
                                 Ok(id) if ctx.peers.contains_key(&id) => ctx.window = Direct(id),
@@ -107,7 +113,7 @@ async fn command_line() -> Result<(), Error> {
                         }
                     }
                     "clearpeers" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+                        let mutex = CLIENT_CTX.get().ok_or(MissingMutexError)?;
                         if let Ok(mut ctx) = mutex.lock() {
                             ctx.peers.clear();
                         }
@@ -120,7 +126,7 @@ async fn command_line() -> Result<(), Error> {
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                bail!("quit");
+                eprintln!("quit");
             }
             Err(err) => {
                 println!("Error: {err}");
@@ -141,12 +147,12 @@ fn get_recipient() -> Option<u8> {
 }
 
 #[allow(unused_variables)]
-fn lobby_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+fn lobby_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     Ok(())
 }
 #[allow(unused_variables)]
-async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
-    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
+async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
+    let mutex = CLIENT_CTX.get().ok_or(MissingMutexError)?;
     match cmd {
         "exit" | "quit" => {
             if let Ok(mut ctx) = mutex.lock() {
@@ -164,12 +170,12 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<(
     Ok(())
 }
 #[allow(unused_variables)]
-fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     todo!();
 }
 
 #[expect(dead_code)]
 #[allow(unused_variables)]
-fn ping_peer(id: u8) -> anyhow::Result<()> {
+fn ping_peer(id: u8) -> Result<(), Error> {
     todo!()
 }

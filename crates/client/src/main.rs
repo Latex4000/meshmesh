@@ -96,6 +96,7 @@ async fn command_line() -> Result<(), Error> {
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("quit");
+                Peer::disconnect().await?;
                 return Ok(());
             }
             Err(err) => {

@@ -96,7 +96,8 @@ async fn command_line() -> Result<(), Error> {
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                eprintln!("quit");
+                println!("quit");
+                return Ok(());
             }
             Err(err) => {
                 println!("Error: {err}");

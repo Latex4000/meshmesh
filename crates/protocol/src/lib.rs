@@ -4,7 +4,7 @@ pub mod format;
 pub mod state;
 
 use crate::codec::{codec, open_stream, read_msg, write_msg};
-use crate::error::Error;
+use crate::error::Error::{self, NoResponseError, SelfConnectingError, UnexpectedResponseError};
 use crate::format::{Request, Response};
 use crate::state::Peer;
 use chrono::Utc;
@@ -103,13 +103,14 @@ impl Peer {
 
         match read_msg::<Response>(&mut rx).await? {
             Some(Response::ACK) => Ok(()),
-            other => bail!("{other:?}"),
+            Some(other) => Err(UnexpectedResponseError(other)),
+            None => Err(NoResponseError),
         }
     }
     pub async fn discover(ticket: &str) -> Result<(), Error> {
         let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
         let (mut tx, mut rx) = open_stream(ticket).await?;
@@ -126,7 +127,7 @@ impl Peer {
     pub async fn ping(ticket: &str) -> Result<(), Error> {
         let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
         let ticket = match ticket.parse::<u8>() {

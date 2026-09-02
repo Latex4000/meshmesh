@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.104"
+thiserror = "2.0.19"
 chrono = { version = "0.4.45", features = ["serde"] }
 iroh = "1.0.3"
 iroh-tickets = "1.0.0"

@@ -1,13 +1,14 @@
 pub mod codec;
+pub mod error;
 pub mod format;
 pub mod state;
 
 use std::sync::{Mutex, OnceLock};
 
 use crate::codec::codec;
+use crate::error::Error;
 use crate::format::{Request, Response};
 use crate::state::Peer;
-use anyhow::{anyhow, bail};
 use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use iroh::endpoint::{RecvStream, SendStream};
@@ -69,7 +70,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
     }
 }
 
-pub async fn init() -> anyhow::Result<()> {
+pub async fn init() -> Result<(), Error> {
     let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
     let router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(crate::ALPN, crate::MeshMeshProtocol)
@@ -87,14 +88,14 @@ pub async fn init() -> anyhow::Result<()> {
 async fn write_msg<T: Serialize>(
     tx: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
     msg: &T,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     tx.send(postcard::to_allocvec(msg)?.into()).await?;
     Ok(())
 }
 
 async fn read_msg<T: DeserializeOwned>(
     rx: &mut FramedRead<RecvStream, LengthDelimitedCodec>,
-) -> anyhow::Result<Option<T>> {
+) -> Result<Option<T>, Error> {
     match rx.next().await {
         Some(frame) => Ok(Some(postcard::from_bytes(&frame?)?)),
         None => Ok(None),
@@ -102,7 +103,7 @@ async fn read_msg<T: DeserializeOwned>(
 }
 
 impl Peer {
-    pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
+    pub async fn send_to(recipient: u8, data: String) -> Result<(), Error> {
         let peer;
         {
             let mutex = CLIENT_CTX.get().unwrap();
@@ -133,7 +134,7 @@ impl Peer {
             other => bail!("{other:?}"),
         }
     }
-    pub async fn discover(ticket: &str) -> anyhow::Result<()> {
+    pub async fn discover(ticket: &str) -> Result<(), Error> {
         let self_info;
         {
             let mutex = CLIENT_CTX.get().unwrap();
@@ -168,7 +169,7 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn ping(ticket: &str) -> anyhow::Result<()> {
+    pub async fn ping(ticket: &str) -> Result<(), Error> {
         let self_info;
         {
             let mutex = CLIENT_CTX.get().unwrap();

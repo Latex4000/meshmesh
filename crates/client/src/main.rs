@@ -1,6 +1,6 @@
-use anyhow::{Result, anyhow, bail};
 use protocol::{
     CLIENT_CTX,
+    error::Error,
     state::{
         ClientWindow::{Direct, Lobby, Room},
         Peer,
@@ -26,7 +26,6 @@ fn main() {
     dioxus_native::launch(App);
 }
 
-
 #[cfg(feature = "gui")]
 #[component]
 fn App() -> Element {
@@ -37,7 +36,7 @@ fn App() -> Element {
     }
 }
 
-async fn command_line() -> anyhow::Result<()> {
+async fn command_line() -> Result<(), Error> {
     let mut rl = DefaultEditor::new()?;
     let mut client_window = Lobby;
 

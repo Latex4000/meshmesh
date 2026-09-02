@@ -1,12 +1,10 @@
-mod app;
-
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use protocol::{
-    CLIENT_CTX,
     state::{
         ClientWindow::{Direct, Lobby, Room},
         Peer,
     },
+    use_ctx,
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
 
@@ -30,13 +28,9 @@ fn main() {
 
 async fn command_line() -> anyhow::Result<()> {
     let mut rl = DefaultEditor::new()?;
-    let mut client_window = Lobby;
 
     loop {
-        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-        if let Ok(ctx) = mutex.lock() {
-            client_window = ctx.window.clone();
-        }
+        let client_window = use_ctx(|ctx| ctx.window.clone());
 
         let recipient_opt = get_recipient();
         let readline_text = match client_window {
@@ -74,36 +68,18 @@ async fn command_line() -> anyhow::Result<()> {
                             println!("{e}");
                         }
                     }
-                    "peers" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                        if let Ok(ctx) = mutex.lock() {
-                            println!("\n Peers: {:?}", ctx.peers.keys().collect::<Vec<_>>())
-                        }
-                    }
-                    "state" => println!("{:?}", CLIENT_CTX.get().unwrap()),
-                    "info" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                        if let Ok(ctx) = mutex.lock() {
-                            println!("{ctx}")
-                        }
-                    }
+                    "peers" => use_ctx(|ctx| {
+                        println!("\n Peers: {:?}", ctx.peers.keys().collect::<Vec<_>>())
+                    }),
+                    "state" => use_ctx(|ctx| println!("{:?}", ctx)),
+                    "info" => use_ctx(|ctx| println!("{ctx}")),
                     "cls" => clearscreen::clear().expect("failed to clear screen"),
-                    "direct" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                        if let Ok(mut ctx) = mutex.lock() {
-                            match args.join(" ").parse() {
-                                Ok(id) if ctx.peers.contains_key(&id) => ctx.window = Direct(id),
-                                Ok(id) => println!("You have not discovered peer ID {id}"),
-                                Err(e) => println!("Could not parse ID.\n{e}"),
-                            }
-                        }
-                    }
-                    "clearpeers" => {
-                        let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
-                        if let Ok(mut ctx) = mutex.lock() {
-                            ctx.peers.clear();
-                        }
-                    }
+                    "direct" => use_ctx(|ctx| match args.join(" ").parse() {
+                        Ok(id) if ctx.peers.contains_key(&id) => ctx.window = Direct(id),
+                        Ok(id) => println!("You have not discovered peer ID {id}"),
+                        Err(e) => println!("Could not parse ID.\n{e}"),
+                    }),
+                    "clearpeers" => use_ctx(|ctx| ctx.peers.clear()),
                     _ => match client_window {
                         Lobby => lobby_cmds(line, cmd, args)?,
                         Direct(_) => direct_cmds(line, cmd, args).await?,
@@ -122,10 +98,7 @@ async fn command_line() -> anyhow::Result<()> {
 }
 
 fn get_recipient() -> Option<u8> {
-    if let Some(mutex) = CLIENT_CTX.get()
-        && let Ok(ctx) = mutex.lock()
-        && let Direct(recipient) = ctx.window
-    {
+    if let Direct(recipient) = use_ctx(|ctx| ctx.window.clone()) {
         Some(recipient)
     } else {
         None
@@ -138,13 +111,8 @@ fn lobby_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
 }
 #[allow(unused_variables)]
 async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
-    let mutex = CLIENT_CTX.get().ok_or(anyhow!("couldnt get mutex"))?;
     match cmd {
-        "exit" | "quit" => {
-            if let Ok(mut ctx) = mutex.lock() {
-                ctx.window = Lobby;
-            }
-        }
+        "exit" | "quit" => use_ctx(|ctx| ctx.window = Lobby),
         _ => {
             if let Some(recipient) = get_recipient()
                 && let Err(e) = Peer::send_to(recipient, line.to_string()).await

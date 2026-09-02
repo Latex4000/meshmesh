@@ -18,8 +18,12 @@ pub const ALPN: &[u8] = b"meshmesh/1";
 
 static ROUTER: tokio::sync::OnceCell<iroh::protocol::Router> = tokio::sync::OnceCell::const_new();
 static ENDPOINT: tokio::sync::OnceCell<iroh::Endpoint> = tokio::sync::OnceCell::const_new();
-
-pub static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
+static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
+pub fn use_ctx<T>(f: impl FnOnce(&mut Peer) -> T) -> T {
+    let mutex = CLIENT_CTX.get().expect("init() has not been called");
+    let mut ctx = mutex.lock().unwrap();
+    f(&mut ctx)
+}
 
 #[derive(Debug, Clone)]
 pub struct MeshMeshProtocol;
@@ -39,23 +43,22 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
 
             let mut responses = Vec::new();
             {
-                // Considering we'll probably need the ctx for other requests/responses I left it outside the match instead of inside GetDiscover
-                let mutex = CLIENT_CTX.get().unwrap();
-                let mut ctx = mutex.lock().unwrap();
-                match req {
-                    Request::GetDiscover(peer_info) => {
-                        ctx.peers.insert(peer_info.id, peer_info.clone());
-                        responses.push(Response::Discover(ctx.get_info()));
-                        for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
-                            responses.push(Response::Discover(peer.1.clone()));
+                use_ctx(|ctx| {
+                    match req {
+                        Request::GetDiscover(peer_info) => {
+                            ctx.peers.insert(peer_info.id, peer_info.clone());
+                            responses.push(Response::Discover(ctx.get_info()));
+                            for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
+                                responses.push(Response::Discover(peer.1.clone()));
+                            }
                         }
-                    }
-                    Request::Ping => responses.push(Response::Pong(Utc::now())),
-                    Request::Direct(data) => {
-                        info!("got dm -> {data}");
-                        responses.push(Response::ACK);
-                    }
-                };
+                        Request::Ping => responses.push(Response::Pong(Utc::now())),
+                        Request::Direct(data) => {
+                            info!("got dm -> {data}");
+                            responses.push(Response::ACK);
+                        }
+                    };
+                })
             }
             for x in responses {
                 let _ = write_msg(&mut tx, &x).await;
@@ -85,13 +88,12 @@ pub async fn init() -> anyhow::Result<()> {
 
 impl Peer {
     pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
-        let ticket;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            let some_peer = ctx.peers.get(&recipient).context("Peer not found")?;
-            ticket = some_peer.ticket.clone();
-        }
+        let ticket = use_ctx(|ctx| {
+            let peer = ctx.peers.get(&recipient)?;
+            Some(peer.ticket.clone())
+        })
+        .context("Peer not found")?;
+
         let (mut tx, mut rx) = open_stream(&ticket).await?;
 
         write_msg(&mut tx, &Request::Direct(data)).await?;
@@ -104,13 +106,7 @@ impl Peer {
         }
     }
     pub async fn discover(ticket: &str) -> anyhow::Result<()> {
-        let self_info;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            self_info = ctx.get_info();
-        }
-
+        let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
             bail!("Can't connect to yourself");
         }
@@ -120,33 +116,24 @@ impl Peer {
         write_msg(&mut tx, &Request::GetDiscover(self_info)).await?;
 
         while let Some(Response::Discover(peer_info)) = read_msg::<Response>(&mut rx).await? {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let mut ctx = mutex.lock().unwrap();
-            ctx.peers.insert(peer_info.id, peer_info);
+            use_ctx(|ctx| ctx.peers.insert(peer_info.id, peer_info));
         }
         tx.close().await?;
         Ok(())
     }
 
     pub async fn ping(ticket: &str) -> anyhow::Result<()> {
-        let self_info;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            self_info = ctx.get_info();
-        }
-
+        let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
             bail!("Can't connect to yourself");
         }
 
         let ticket = match ticket.parse::<u8>() {
-            Ok(peer_id) => {
-                let mutex = CLIENT_CTX.get().unwrap();
-                let ctx = mutex.lock().unwrap();
-                let peer = ctx.peers.get(&peer_id).context("Could not find peer")?;
-                peer.ticket.clone()
-            }
+            Ok(peer_id) => use_ctx(|ctx| {
+                let peer = ctx.peers.get(&peer_id)?;
+                Some(peer.ticket.clone())
+            })
+            .context("Peer not found")?,
             Err(_) => ticket.to_string(),
         };
         let (mut tx, mut rx) = open_stream(&ticket).await?;

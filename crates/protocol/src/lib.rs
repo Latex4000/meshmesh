@@ -39,13 +39,14 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
             };
 
             let mut responses = Vec::new();
+            let mut disconnecting_peer = None;
             {
                 // Considering we'll probably need the ctx for other requests/responses I left it outside the match instead of inside GetDiscover
                 let mutex = CLIENT_CTX.get().unwrap();
                 let mut ctx = mutex.lock().unwrap();
                 match req {
                     Request::GetDiscover(peer_info) => {
-                        ctx.peers.insert(peer_info.id.clone(), peer_info.clone());
+                        ctx.peers.insert(peer_info.id, peer_info.clone());
                         responses.push(Response::Discover(ctx.get_info()));
                         for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
                             responses.push(Response::Discover(peer.1.clone()));
@@ -56,6 +57,13 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                         info!("got dm -> {data}");
                         responses.push(Response::ACK);
                     }
+                    Request::Disconnect(peer_info) => {
+                        responses.push(Response::ACK);
+                        if ctx.peers.contains_key(&peer_info.id) {
+                            ctx.peers.remove(&peer_info.id);
+                            disconnecting_peer = Some(peer_info);
+                        }
+                    }
                 };
             }
             for x in responses {
@@ -63,6 +71,45 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
             }
 
             tx.close().await?;
+
+            if let Some(peer_info) = disconnecting_peer {
+                let peers;
+                {
+                    let mutex = CLIENT_CTX.get().unwrap();
+                    let ctx = mutex.lock().unwrap();
+                    peers = ctx.peers.clone();
+                }
+                for peer in peers {
+                    let ticket = EndpointTicket::decode_string(&peer.1.ticket)
+                        .expect("failed to parse ticket to propogate disconnection");
+                    let conn = ENDPOINT
+                        .get()
+                        .unwrap()
+                        .connect(ticket.endpoint_addr().clone(), crate::ALPN)
+                        .await
+                        .expect("Could not start connection to propogate disconnection");
+                    let (send, recv) = conn.open_bi().await?;
+                    let (mut tx, mut rx) = (
+                        FramedWrite::new(send, codec()),
+                        FramedRead::new(recv, codec()),
+                    );
+                    write_msg(&mut tx, &Request::Disconnect(peer_info.clone()))
+                        .await
+                        .expect("Could not write to peer to propogate disconnection");
+
+                    tx.close().await?;
+
+                    match read_msg::<Response>(&mut rx)
+                        .await
+                        .expect("Could not read response from propogating disconnection")
+                    {
+                        Some(Response::ACK) => {}
+                        other => eprintln!(
+                            "Expected ACK from telling peers to remove other peer, got {other:?}"
+                        ),
+                    };
+                }
+            }
         }
 
         Ok(())
@@ -133,6 +180,7 @@ impl Peer {
             other => bail!("{other:?}"),
         }
     }
+
     pub async fn discover(ticket: &str) -> anyhow::Result<()> {
         let self_info;
         {
@@ -218,6 +266,50 @@ impl Peer {
             _ => eprintln!("closed without replying"),
         }
         tx.close().await?;
+        Ok(())
+    }
+
+    pub async fn disconnect() -> anyhow::Result<()> {
+        println!("Disconnecting from peers...");
+        let peers;
+        let self_info;
+        {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let ctx = mutex.lock().unwrap();
+            peers = ctx.peers.clone();
+            self_info = ctx.get_info();
+        }
+
+        for peer in peers {
+            let ticket = EndpointTicket::decode_string(&peer.1.ticket)
+                .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+            let conn = ENDPOINT
+                .get()
+                .unwrap()
+                .connect(ticket.endpoint_addr().clone(), crate::ALPN)
+                .await?;
+            let (send, recv) = conn.open_bi().await?;
+            let (mut tx, mut rx) = (
+                FramedWrite::new(send, codec()),
+                FramedRead::new(recv, codec()),
+            );
+
+            write_msg(&mut tx, &Request::Disconnect(self_info.clone())).await?;
+
+            tx.close().await?;
+
+            match read_msg::<Response>(&mut rx).await? {
+                Some(Response::ACK) => {}
+                other => bail!("{other:?}"),
+            }
+        }
+
+        println!("Shutting down router...");
+        ROUTER
+            .get()
+            .expect("Could not get router")
+            .shutdown()
+            .await?;
         Ok(())
     }
 }

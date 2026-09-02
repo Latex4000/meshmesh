@@ -26,7 +26,6 @@ fn main() {
     dioxus_native::launch(App);
 }
 
-
 #[cfg(feature = "gui")]
 #[component]
 fn App() -> Element {
@@ -121,6 +120,7 @@ async fn command_line() -> anyhow::Result<()> {
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
+                Peer::disconnect().await?;
                 bail!("quit");
             }
             Err(err) => {

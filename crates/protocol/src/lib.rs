@@ -1,13 +1,14 @@
 pub mod codec;
+pub mod error;
 pub mod format;
 pub mod state;
 
 use std::sync::{Mutex, OnceLock};
 
 use crate::codec::codec;
+use crate::error::Error::{self, NoResponseError, SelfConnectingError, UnexpectedResponseError};
 use crate::format::{Request, Response};
 use crate::state::Peer;
-use anyhow::{anyhow, bail};
 use chrono::Utc;
 use futures::{SinkExt, StreamExt};
 use iroh::endpoint::{RecvStream, SendStream};
@@ -45,7 +46,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                 let mut ctx = mutex.lock().unwrap();
                 match req {
                     Request::GetDiscover(peer_info) => {
-                        ctx.peers.insert(peer_info.id.clone(), peer_info.clone());
+                        ctx.peers.insert(peer_info.id, peer_info.clone());
                         responses.push(Response::Discover(ctx.get_info()));
                         for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
                             responses.push(Response::Discover(peer.1.clone()));
@@ -69,7 +70,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
     }
 }
 
-pub async fn init() -> anyhow::Result<()> {
+pub async fn init() -> Result<(), Error> {
     let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
     let router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(crate::ALPN, crate::MeshMeshProtocol)
@@ -87,14 +88,14 @@ pub async fn init() -> anyhow::Result<()> {
 async fn write_msg<T: Serialize>(
     tx: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
     msg: &T,
-) -> anyhow::Result<()> {
+) -> Result<(), Error> {
     tx.send(postcard::to_allocvec(msg)?.into()).await?;
     Ok(())
 }
 
 async fn read_msg<T: DeserializeOwned>(
     rx: &mut FramedRead<RecvStream, LengthDelimitedCodec>,
-) -> anyhow::Result<Option<T>> {
+) -> Result<Option<T>, Error> {
     match rx.next().await {
         Some(frame) => Ok(Some(postcard::from_bytes(&frame?)?)),
         None => Ok(None),
@@ -102,18 +103,18 @@ async fn read_msg<T: DeserializeOwned>(
 }
 
 impl Peer {
-    pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
+    pub async fn send_to(recipient: u8, data: String) -> Result<(), Error> {
         let peer;
         {
             let mutex = CLIENT_CTX.get().unwrap();
             let ctx = mutex.lock().unwrap();
-            let Some(some_peer) = ctx.peers.get(&recipient) else {
-                bail!("Peer not found")
-            };
-            peer = some_peer.clone();
+            peer = ctx
+                .peers
+                .get(&recipient)
+                .ok_or(Error::MissingPeerError)?
+                .clone();
         }
-        let ticket = EndpointTicket::decode_string(&peer.ticket)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let ticket = EndpointTicket::decode_string(&peer.ticket)?;
         let conn = ENDPOINT
             .get()
             .unwrap()
@@ -130,10 +131,11 @@ impl Peer {
 
         match read_msg::<Response>(&mut rx).await? {
             Some(Response::ACK) => Ok(()),
-            other => bail!("{other:?}"),
+            Some(other) => Err(UnexpectedResponseError(other)),
+            None => Err(NoResponseError),
         }
     }
-    pub async fn discover(ticket: &str) -> anyhow::Result<()> {
+    pub async fn discover(ticket: &str) -> Result<(), Error> {
         let self_info;
         {
             let mutex = CLIENT_CTX.get().unwrap();
@@ -142,11 +144,10 @@ impl Peer {
         }
 
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
-        let ticket = EndpointTicket::decode_string(ticket)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let ticket = EndpointTicket::decode_string(ticket)?;
         let conn = ENDPOINT
             .get()
             .unwrap()
@@ -168,7 +169,7 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn ping(ticket: &str) -> anyhow::Result<()> {
+    pub async fn ping(ticket: &str) -> Result<(), Error> {
         let self_info;
         {
             let mutex = CLIENT_CTX.get().unwrap();
@@ -177,22 +178,22 @@ impl Peer {
         }
 
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
         let ticket_str = match ticket.parse::<u8>() {
             Ok(peer_id) => {
                 let mutex = CLIENT_CTX.get().unwrap();
                 let ctx = mutex.lock().unwrap();
-                match ctx.peers.get(&peer_id) {
-                    Some(peer) => peer.ticket.clone(),
-                    None => bail!("Could not find peer"),
-                }
+                ctx.peers
+                    .get(&peer_id)
+                    .ok_or(Error::MissingPeerError)?
+                    .ticket
+                    .clone()
             }
             Err(_) => ticket.to_string(),
         };
-        let ticket = EndpointTicket::decode_string(&ticket_str)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
+        let ticket = EndpointTicket::decode_string(&ticket_str)?;
         let conn = ENDPOINT
             .get()
             .unwrap()

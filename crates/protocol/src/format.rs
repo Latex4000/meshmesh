@@ -8,6 +8,7 @@ pub enum Request {
     GetDiscover(PeerInfo),
     Ping,
     Direct(String),
+    Disconnect(PeerInfo),
 }
 
 #[derive(Debug, Serialize, Deserialize)]

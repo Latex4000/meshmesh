@@ -4,11 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-dioxus-native = {
-    git = "https://github.com/DioxusLabs/blitz",
-    features = ["prelude"],
-    rev = "4507cd7"
-}
+dioxus-native = { git = "https://github.com/DioxusLabs/blitz", features = [
+    "prelude",
+], rev = "4507cd7" }
 rustyline = "*"
 anyhow = "1.0.104"
 tokio = { version = "1.53.1", features = ["full"] }

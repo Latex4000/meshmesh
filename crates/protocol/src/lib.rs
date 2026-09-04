@@ -2,26 +2,29 @@ pub mod codec;
 pub mod format;
 pub mod state;
 
-use std::sync::{Mutex, OnceLock};
-
-use crate::codec::codec;
+use crate::codec::{codec, open_stream, read_msg, write_msg};
 use crate::format::{Request, Response};
 use crate::state::Peer;
-use anyhow::{anyhow, bail};
+use anyhow::{Context, bail};
 use chrono::Utc;
-use futures::{SinkExt, StreamExt};
-use iroh::endpoint::{RecvStream, SendStream};
+use futures::SinkExt;
 use iroh::{endpoint::Connection, protocol::AcceptError};
-use iroh_tickets::{Ticket, endpoint::EndpointTicket};
-
+use iroh_tickets::endpoint::EndpointTicket;
 use log::info;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
+use std::sync::{Mutex, OnceLock};
+use tokio_util::codec::{FramedRead, FramedWrite};
+
 pub const ALPN: &[u8] = b"meshmesh/1";
+
 static ROUTER: tokio::sync::OnceCell<iroh::protocol::Router> = tokio::sync::OnceCell::const_new();
 static ENDPOINT: tokio::sync::OnceCell<iroh::Endpoint> = tokio::sync::OnceCell::const_new();
-pub static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
+static CLIENT_CTX: OnceLock<Mutex<Peer>> = OnceLock::new();
+pub fn use_ctx<T>(f: impl FnOnce(&mut Peer) -> T) -> T {
+    let mutex = CLIENT_CTX.get().expect("init() has not been called");
+    let mut ctx = mutex.lock().unwrap();
+    f(&mut ctx)
+}
+
 #[derive(Debug, Clone)]
 pub struct MeshMeshProtocol;
 
@@ -40,23 +43,22 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
 
             let mut responses = Vec::new();
             {
-                // Considering we'll probably need the ctx for other requests/responses I left it outside the match instead of inside GetDiscover
-                let mutex = CLIENT_CTX.get().unwrap();
-                let mut ctx = mutex.lock().unwrap();
-                match req {
-                    Request::GetDiscover(peer_info) => {
-                        ctx.peers.insert(peer_info.id.clone(), peer_info.clone());
-                        responses.push(Response::Discover(ctx.get_info()));
-                        for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
-                            responses.push(Response::Discover(peer.1.clone()));
+                use_ctx(|ctx| {
+                    match req {
+                        Request::GetDiscover(peer_info) => {
+                            ctx.peers.insert(peer_info.id, peer_info.clone());
+                            responses.push(Response::Discover(ctx.get_info()));
+                            for peer in ctx.peers.iter().filter(|(k, _v)| **k != peer_info.id) {
+                                responses.push(Response::Discover(peer.1.clone()));
+                            }
                         }
-                    }
-                    Request::Ping => responses.push(Response::Pong(Utc::now())),
-                    Request::Direct(data) => {
-                        info!("got dm -> {data}");
-                        responses.push(Response::ACK);
-                    }
-                };
+                        Request::Ping => responses.push(Response::Pong(Utc::now())),
+                        Request::Direct(data) => {
+                            info!("got dm -> {data}");
+                            responses.push(Response::ACK);
+                        }
+                    };
+                })
             }
             for x in responses {
                 let _ = write_msg(&mut tx, &x).await;
@@ -84,46 +86,16 @@ pub async fn init() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn write_msg<T: Serialize>(
-    tx: &mut FramedWrite<SendStream, LengthDelimitedCodec>,
-    msg: &T,
-) -> anyhow::Result<()> {
-    tx.send(postcard::to_allocvec(msg)?.into()).await?;
-    Ok(())
-}
-
-async fn read_msg<T: DeserializeOwned>(
-    rx: &mut FramedRead<RecvStream, LengthDelimitedCodec>,
-) -> anyhow::Result<Option<T>> {
-    match rx.next().await {
-        Some(frame) => Ok(Some(postcard::from_bytes(&frame?)?)),
-        None => Ok(None),
-    }
-}
-
 impl Peer {
     pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
-        let peer;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            let Some(some_peer) = ctx.peers.get(&recipient) else {
-                bail!("Peer not found")
-            };
-            peer = some_peer.clone();
-        }
-        let ticket = EndpointTicket::decode_string(&peer.ticket)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
-        let conn = ENDPOINT
-            .get()
-            .unwrap()
-            .connect(ticket.endpoint_addr().clone(), crate::ALPN)
-            .await?;
-        let (send, recv) = conn.open_bi().await?;
-        let (mut tx, mut rx) = (
-            FramedWrite::new(send, codec()),
-            FramedRead::new(recv, codec()),
-        );
+        let ticket = use_ctx(|ctx| {
+            let peer = ctx.peers.get(&recipient)?;
+            Some(peer.ticket.clone())
+        })
+        .context("Peer not found")?;
+
+        let (mut tx, mut rx) = open_stream(&ticket).await?;
+
         write_msg(&mut tx, &Request::Direct(data)).await?;
 
         tx.close().await?;
@@ -134,75 +106,38 @@ impl Peer {
         }
     }
     pub async fn discover(ticket: &str) -> anyhow::Result<()> {
-        let self_info;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            self_info = ctx.get_info();
-        }
-
+        let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
             bail!("Can't connect to yourself");
         }
 
-        let ticket = EndpointTicket::decode_string(ticket)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
-        let conn = ENDPOINT
-            .get()
-            .unwrap()
-            .connect(ticket.endpoint_addr().clone(), crate::ALPN)
-            .await?;
-        let (send, recv) = conn.open_bi().await?;
-        let (mut tx, mut rx) = (
-            FramedWrite::new(send, codec()),
-            FramedRead::new(recv, codec()),
-        );
+        let (mut tx, mut rx) = open_stream(ticket).await?;
+
         write_msg(&mut tx, &Request::GetDiscover(self_info)).await?;
 
         while let Some(Response::Discover(peer_info)) = read_msg::<Response>(&mut rx).await? {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let mut ctx = mutex.lock().unwrap();
-            ctx.peers.insert(peer_info.id, peer_info);
+            use_ctx(|ctx| ctx.peers.insert(peer_info.id, peer_info));
         }
         tx.close().await?;
         Ok(())
     }
 
     pub async fn ping(ticket: &str) -> anyhow::Result<()> {
-        let self_info;
-        {
-            let mutex = CLIENT_CTX.get().unwrap();
-            let ctx = mutex.lock().unwrap();
-            self_info = ctx.get_info();
-        }
-
+        let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
             bail!("Can't connect to yourself");
         }
 
-        let ticket_str = match ticket.parse::<u8>() {
-            Ok(peer_id) => {
-                let mutex = CLIENT_CTX.get().unwrap();
-                let ctx = mutex.lock().unwrap();
-                match ctx.peers.get(&peer_id) {
-                    Some(peer) => peer.ticket.clone(),
-                    None => bail!("Could not find peer"),
-                }
-            }
+        let ticket = match ticket.parse::<u8>() {
+            Ok(peer_id) => use_ctx(|ctx| {
+                let peer = ctx.peers.get(&peer_id)?;
+                Some(peer.ticket.clone())
+            })
+            .context("Peer not found")?,
             Err(_) => ticket.to_string(),
         };
-        let ticket = EndpointTicket::decode_string(&ticket_str)
-            .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
-        let conn = ENDPOINT
-            .get()
-            .unwrap()
-            .connect(ticket.endpoint_addr().clone(), crate::ALPN)
-            .await?;
-        let (send, recv) = conn.open_bi().await?;
-        let (mut tx, mut rx) = (
-            FramedWrite::new(send, codec()),
-            FramedRead::new(recv, codec()),
-        );
+        let (mut tx, mut rx) = open_stream(&ticket).await?;
+
         let init_time = Utc::now();
         write_msg(&mut tx, &Request::Ping).await?;
 

@@ -9,6 +9,8 @@ use protocol::{
     },
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
+
+#[cfg(feature = "gui")]
 use app::MeshmeshApp;
 
 #[cfg(not(feature = "gui"))]

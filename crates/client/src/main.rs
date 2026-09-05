@@ -1,3 +1,5 @@
+mod app;
+
 use anyhow::{Result, anyhow, bail};
 use protocol::{
     CLIENT_CTX,
@@ -9,7 +11,7 @@ use protocol::{
 use rustyline::{DefaultEditor, error::ReadlineError};
 
 #[cfg(feature = "gui")]
-use dioxus_native::prelude::*;
+use app::MeshmeshApp;
 
 #[cfg(not(feature = "gui"))]
 #[tokio::main]
@@ -23,18 +25,7 @@ async fn main() -> Result<()> {
 #[cfg(feature = "gui")]
 fn main() {
     tracing_subscriber::fmt::init();
-    dioxus_native::launch(App);
-}
-
-
-#[cfg(feature = "gui")]
-#[component]
-fn App() -> Element {
-    rsx! {
-        div {
-            h1 { "welcome to my app" }
-        }
-    }
+    dioxus_native::launch(MeshmeshApp);
 }
 
 async fn command_line() -> anyhow::Result<()> {

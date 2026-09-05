@@ -1,0 +1,10 @@
+:root {
+    --background-color: #111;
+    --text-color: #eee;
+}
+
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+    font-family: monospace;
+}

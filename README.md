@@ -7,9 +7,19 @@ messaging app so we can get off discord
 cargo run
 ```
 
-If u are using the GUI:
+If u are using the GUI, get the dioxus-cli either by cargo-binstall or with --locked:
 ```
-cargo run --features gui
+cargo install cargo-binstall    
+cargo binstall dioxus-cli --force
+
+// or
+
+cargo install dioxus-cli --locked 
+```
+
+And then with dioxus-cli:
+```
+dx serve --package client --platform desktop --features gui
 ```
 
 ### Development on WSL

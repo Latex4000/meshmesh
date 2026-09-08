@@ -1,3 +1,5 @@
+mod app;
+
 use anyhow::{Result, bail};
 use protocol::{
     state::{

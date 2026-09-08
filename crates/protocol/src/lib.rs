@@ -93,7 +93,7 @@ impl Peer {
             let peer = ctx.peers.get(&recipient)?;
             Some(peer.ticket.clone())
         })
-        .context("Peer not found")?;
+        .ok_or(Error::MissingPeerError)?;
 
         let (mut tx, mut rx) = open_stream(&ticket).await?;
 
@@ -135,7 +135,7 @@ impl Peer {
                 let peer = ctx.peers.get(&peer_id)?;
                 Some(peer.ticket.clone())
             })
-            .context("Peer not found")?,
+            .ok_or(Error::MissingPeerError)?,
             Err(_) => ticket.to_string(),
         };
         let (mut tx, mut rx) = open_stream(&ticket).await?;

@@ -1,7 +1,6 @@
 mod app;
 use protocol::{
-    CLIENT_CTX,
-    error::Error::{self, MissingMutexError},
+    error::Error,
     state::{
         ClientWindow::{Direct, Lobby, Room},
         Peer,

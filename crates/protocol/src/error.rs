@@ -8,6 +8,9 @@ pub enum Error {
     #[error("Could not get/missing mutex")]
     MissingMutexError,
 
+    #[error("Endpoint is missing in OnceCell")]
+    MissingEndpointError,
+
     #[error("Missing peer")]
     MissingPeerError,
 

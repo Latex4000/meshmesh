@@ -83,19 +83,9 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                     peers = ctx.peers.clone();
                 }
                 for peer in peers {
-                    let ticket = EndpointTicket::decode_string(&peer.1.ticket)
-                        .expect("failed to parse ticket to propogate disconnection");
-                    let conn = ENDPOINT
-                        .get()
-                        .unwrap()
-                        .connect(ticket.endpoint_addr().clone(), crate::ALPN)
+                    let (mut tx, mut rx) = open_stream(&peer.1.ticket)
                         .await
-                        .expect("Could not start connection to propogate disconnection");
-                    let (send, recv) = conn.open_bi().await?;
-                    let (mut tx, mut rx) = (
-                        FramedWrite::new(send, codec()),
-                        FramedRead::new(recv, codec()),
-                    );
+                        .expect("Could not open stream to propogate disconnection");
                     write_msg(&mut tx, &Request::Disconnect(peer_info.clone()))
                         .await
                         .expect("Could not write to peer to propogate disconnection");
@@ -205,7 +195,7 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn disconnect() -> anyhow::Result<()> {
+    pub async fn disconnect() -> Result<(), Error> {
         println!("Disconnecting from peers...");
         let peers;
         let self_info;
@@ -217,18 +207,7 @@ impl Peer {
         }
 
         for peer in peers {
-            let ticket = EndpointTicket::decode_string(&peer.1.ticket)
-                .map_err(|e| anyhow!("failed to parse ticket: {}", e))?;
-            let conn = ENDPOINT
-                .get()
-                .unwrap()
-                .connect(ticket.endpoint_addr().clone(), crate::ALPN)
-                .await?;
-            let (send, recv) = conn.open_bi().await?;
-            let (mut tx, mut rx) = (
-                FramedWrite::new(send, codec()),
-                FramedRead::new(recv, codec()),
-            );
+            let (mut tx, mut rx) = open_stream(&peer.1.ticket).await?;
 
             write_msg(&mut tx, &Request::Disconnect(self_info.clone())).await?;
 
@@ -236,7 +215,12 @@ impl Peer {
 
             match read_msg::<Response>(&mut rx).await? {
                 Some(Response::ACK) => {}
-                other => bail!("{other:?}"),
+                Some(other) => {
+                    return Err(UnexpectedResponseError(other));
+                }
+                None => {
+                    return Err(NoResponseError);
+                }
             }
         }
 

@@ -1,4 +1,5 @@
 use thiserror::Error;
+use tokio::task::JoinError;
 
 use crate::format::Response;
 
@@ -39,15 +40,16 @@ pub enum Error {
     #[error("Could not use the connection")]
     ConnectionError(#[from] iroh::endpoint::ConnectionError),
 
-    // postcard
+    // others
     #[error("Error from postcard")]
     PostcardError(#[from] postcard::Error),
 
-    // rustyline
     #[error("Could not get default editor up")]
     RustylineError(#[from] rustyline::error::ReadlineError),
 
-    // others
     #[error("IO error")]
     IOError(#[from] std::io::Error),
+
+    #[error("Contained futures join error")]
+    FutureJoinError(#[from] JoinError),
 }

@@ -43,6 +43,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
             };
 
             let mut responses = Vec::new();
+            let mut disconnecting_peer = None;
             {
                 use_ctx(|ctx| {
                     match req {
@@ -58,6 +59,13 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
                             info!("got dm -> {data}");
                             responses.push(Response::ACK);
                         }
+                        Request::Disconnect(peer_info) => {
+                            responses.push(Response::ACK);
+                            if ctx.peers.contains_key(&peer_info.id) {
+                                ctx.peers.remove(&peer_info.id);
+                                disconnecting_peer = Some(peer_info);
+                            }
+                        }
                     };
                 })
             }
@@ -66,6 +74,35 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
             }
 
             tx.close().await?;
+
+            if let Some(peer_info) = disconnecting_peer {
+                let peers;
+                {
+                    let mutex = CLIENT_CTX.get().unwrap();
+                    let ctx = mutex.lock().unwrap();
+                    peers = ctx.peers.clone();
+                }
+                for peer in peers {
+                    let (mut tx, mut rx) = open_stream(&peer.1.ticket)
+                        .await
+                        .expect("Could not open stream to propogate disconnection");
+                    write_msg(&mut tx, &Request::Disconnect(peer_info.clone()))
+                        .await
+                        .expect("Could not write to peer to propogate disconnection");
+
+                    tx.close().await?;
+
+                    match read_msg::<Response>(&mut rx)
+                        .await
+                        .expect("Could not read response from propogating disconnection")
+                    {
+                        Some(Response::ACK) => {}
+                        other => eprintln!(
+                            "Expected ACK from telling peers to remove other peer, got {other:?}"
+                        ),
+                    };
+                }
+            }
         }
 
         Ok(())
@@ -155,6 +192,44 @@ impl Peer {
             _ => eprintln!("closed without replying"),
         }
         tx.close().await?;
+        Ok(())
+    }
+
+    pub async fn disconnect() -> Result<(), Error> {
+        println!("Disconnecting from peers...");
+        let peers;
+        let self_info;
+        {
+            let mutex = CLIENT_CTX.get().unwrap();
+            let ctx = mutex.lock().unwrap();
+            peers = ctx.peers.clone();
+            self_info = ctx.get_info();
+        }
+
+        for peer in peers {
+            let (mut tx, mut rx) = open_stream(&peer.1.ticket).await?;
+
+            write_msg(&mut tx, &Request::Disconnect(self_info.clone())).await?;
+
+            tx.close().await?;
+
+            match read_msg::<Response>(&mut rx).await? {
+                Some(Response::ACK) => {}
+                Some(other) => {
+                    return Err(UnexpectedResponseError(other));
+                }
+                None => {
+                    return Err(NoResponseError);
+                }
+            }
+        }
+
+        println!("Shutting down router...");
+        ROUTER
+            .get()
+            .expect("Could not get router")
+            .shutdown()
+            .await?;
         Ok(())
     }
 }

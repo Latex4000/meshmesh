@@ -96,6 +96,7 @@ async fn command_line() -> Result<(), Error> {
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 println!("quit");
+                Peer::disconnect().await?;
                 return Ok(());
             }
             Err(err) => {
@@ -134,10 +135,4 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error
 #[allow(unused_variables)]
 fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     todo!();
-}
-
-#[expect(dead_code)]
-#[allow(unused_variables)]
-fn ping_peer(id: u8) -> Result<(), Error> {
-    todo!()
 }

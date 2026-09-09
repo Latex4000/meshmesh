@@ -136,9 +136,3 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error
 fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     todo!();
 }
-
-#[expect(dead_code)]
-#[allow(unused_variables)]
-fn ping_peer(id: u8) -> Result<(), Error> {
-    todo!()
-}

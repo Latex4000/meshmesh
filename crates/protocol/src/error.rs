@@ -1,5 +1,4 @@
 use thiserror::Error;
-use tokio::task::JoinError;
 
 use crate::format::Response;
 
@@ -51,5 +50,5 @@ pub enum Error {
     IOError(#[from] std::io::Error),
 
     #[error("Contained futures join error")]
-    FutureJoinError(#[from] JoinError),
+    FutureJoinError(#[from] tokio::task::JoinError),
 }

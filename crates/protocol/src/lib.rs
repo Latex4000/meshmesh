@@ -1,11 +1,12 @@
 pub mod codec;
+pub mod error;
 pub mod format;
 pub mod state;
 
 use crate::codec::{codec, open_stream, read_msg, write_msg};
+use crate::error::Error::{self, NoResponseError, SelfConnectingError, UnexpectedResponseError};
 use crate::format::{Request, Response};
 use crate::state::Peer;
-use anyhow::{Context, bail};
 use chrono::Utc;
 use futures::SinkExt;
 use iroh::{endpoint::Connection, protocol::AcceptError};
@@ -71,7 +72,7 @@ impl iroh::protocol::ProtocolHandler for MeshMeshProtocol {
     }
 }
 
-pub async fn init() -> anyhow::Result<()> {
+pub async fn init() -> Result<(), Error> {
     let endpoint = iroh::Endpoint::bind(iroh::endpoint::presets::N0).await?;
     let router = iroh::protocol::Router::builder(endpoint.clone())
         .accept(crate::ALPN, crate::MeshMeshProtocol)
@@ -87,12 +88,12 @@ pub async fn init() -> anyhow::Result<()> {
 }
 
 impl Peer {
-    pub async fn send_to(recipient: u8, data: String) -> anyhow::Result<()> {
+    pub async fn send_to(recipient: u8, data: String) -> Result<(), Error> {
         let ticket = use_ctx(|ctx| {
             let peer = ctx.peers.get(&recipient)?;
             Some(peer.ticket.clone())
         })
-        .context("Peer not found")?;
+        .ok_or(Error::MissingPeerError)?;
 
         let (mut tx, mut rx) = open_stream(&ticket).await?;
 
@@ -102,13 +103,14 @@ impl Peer {
 
         match read_msg::<Response>(&mut rx).await? {
             Some(Response::ACK) => Ok(()),
-            other => bail!("{other:?}"),
+            Some(other) => Err(UnexpectedResponseError(other)),
+            None => Err(NoResponseError),
         }
     }
-    pub async fn discover(ticket: &str) -> anyhow::Result<()> {
+    pub async fn discover(ticket: &str) -> Result<(), Error> {
         let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
         let (mut tx, mut rx) = open_stream(ticket).await?;
@@ -122,10 +124,10 @@ impl Peer {
         Ok(())
     }
 
-    pub async fn ping(ticket: &str) -> anyhow::Result<()> {
+    pub async fn ping(ticket: &str) -> Result<(), Error> {
         let self_info = use_ctx(|ctx| ctx.get_info());
         if self_info.ticket == ticket {
-            bail!("Can't connect to yourself");
+            return Err(SelfConnectingError);
         }
 
         let ticket = match ticket.parse::<u8>() {
@@ -133,7 +135,7 @@ impl Peer {
                 let peer = ctx.peers.get(&peer_id)?;
                 Some(peer.ticket.clone())
             })
-            .context("Peer not found")?,
+            .ok_or(Error::MissingPeerError)?,
             Err(_) => ticket.to_string(),
         };
         let (mut tx, mut rx) = open_stream(&ticket).await?;

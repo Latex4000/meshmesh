@@ -1,7 +1,6 @@
 mod app;
-
-use anyhow::{Result, bail};
 use protocol::{
+    error::Error,
     state::{
         ClientWindow::{Direct, Lobby, Room},
         Peer,
@@ -15,10 +14,16 @@ use app::MeshmeshApp;
 
 #[cfg(not(feature = "gui"))]
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), ()> {
     tracing_subscriber::fmt::init();
-    protocol::init().await?;
-    command_line().await?;
+    match protocol::init().await {
+        Ok(_) => {}
+        Err(e) => println!("Error from initializing protocol: {e}"),
+    };
+    match command_line().await {
+        Ok(_) => {}
+        Err(e) => println!("Error from program: {e}"),
+    };
     Ok(())
 }
 
@@ -28,7 +33,7 @@ fn main() {
     dioxus_native::launch(MeshmeshApp);
 }
 
-async fn command_line() -> anyhow::Result<()> {
+async fn command_line() -> Result<(), Error> {
     let mut rl = DefaultEditor::new()?;
 
     loop {
@@ -90,7 +95,8 @@ async fn command_line() -> anyhow::Result<()> {
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
-                bail!("quit");
+                println!("quit");
+                return Ok(());
             }
             Err(err) => {
                 println!("Error: {err}");
@@ -108,11 +114,11 @@ fn get_recipient() -> Option<u8> {
 }
 
 #[allow(unused_variables)]
-fn lobby_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+fn lobby_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     Ok(())
 }
 #[allow(unused_variables)]
-async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     match cmd {
         "exit" | "quit" => use_ctx(|ctx| ctx.window = Lobby),
         _ => {
@@ -126,12 +132,12 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<(
     Ok(())
 }
 #[allow(unused_variables)]
-fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> anyhow::Result<()> {
+fn room_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error> {
     todo!();
 }
 
 #[expect(dead_code)]
 #[allow(unused_variables)]
-fn ping_peer(id: u8) -> anyhow::Result<()> {
+fn ping_peer(id: u8) -> Result<(), Error> {
     todo!()
 }

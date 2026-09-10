@@ -1,5 +1,3 @@
-mod app;
-
 use protocol::{
     error::Error,
     state::{
@@ -10,10 +8,6 @@ use protocol::{
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
 
-#[cfg(feature = "gui")]
-use app::MeshmeshApp;
-
-#[cfg(not(feature = "gui"))]
 #[tokio::main]
 async fn main() -> Result<(), ()> {
     tracing_subscriber::fmt::init();
@@ -26,12 +20,6 @@ async fn main() -> Result<(), ()> {
         Err(e) => println!("Error from program: {e}"),
     };
     Ok(())
-}
-
-#[cfg(feature = "gui")]
-fn main() {
-    tracing_subscriber::fmt::init();
-    dioxus_native::launch(MeshmeshApp);
 }
 
 async fn command_line() -> Result<(), Error> {

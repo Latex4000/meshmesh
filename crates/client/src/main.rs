@@ -1,5 +1,4 @@
 mod app;
-use std::eprintln;
 
 use protocol::{
     error::Error,
@@ -58,7 +57,7 @@ async fn command_line() -> Result<(), Error> {
                     return Ok(());
                 }
                 if let Err(e) = rl.add_history_entry(line) {
-                    eprintln!("Error occurred while adding history entry: {e}");
+                    println!("Error occurred while adding history entry: {e}");
                 };
                 let mut parts = line.split_whitespace();
                 let cmd = parts.next().unwrap_or("");
@@ -99,7 +98,7 @@ async fn command_line() -> Result<(), Error> {
                             Room(_) => room_cmds(line, cmd, args),
                         };
                         if let Err(e) = res {
-                            eprintln!("Error occured when matching wildcard: {e}");
+                            println!("Error occured when matching wildcard: {e}");
                         }
                     }
                 }

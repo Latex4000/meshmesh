@@ -3,38 +3,35 @@ use std::{
     fmt::{Display, Formatter, Result},
 };
 
-use rand::Rng;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum ClientWindow {
     Lobby,
-    Direct(u8),
+    Direct(Uuid),
     Room(u8),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PeerInfo {
-    pub id: u8,
+    pub id: Uuid,
     pub ticket: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Peer {
-    pub id: u8,
+    pub id: Uuid,
     pub ticket: String,
     pub rooms: [u8; 5],
     pub window: ClientWindow,
-    pub peers: HashMap<u8, PeerInfo>,
+    pub peers: HashMap<Uuid, PeerInfo>,
 }
 
 impl Peer {
     pub fn new(ticket: String) -> Self {
-        let mut rng = rand::thread_rng();
-        let id = rng.gen_range(0..255);
-
         Self {
-            id,
+            id: Uuid::new_v4(),
             ticket,
             rooms: [0, 0, 0, 0, 0],
             window: ClientWindow::Lobby,

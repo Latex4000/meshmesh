@@ -7,6 +7,7 @@ use protocol::{
     use_ctx,
 };
 use rustyline::{DefaultEditor, error::ReadlineError};
+use uuid::Uuid;
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
@@ -103,7 +104,7 @@ async fn command_line() -> Result<(), Error> {
     }
 }
 
-fn get_recipient() -> Option<u8> {
+fn get_recipient() -> Option<Uuid> {
     if let Direct(recipient) = use_ctx(|ctx| ctx.window.clone()) {
         Some(recipient)
     } else {

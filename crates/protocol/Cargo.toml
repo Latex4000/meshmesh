@@ -17,3 +17,4 @@ bytes = "1"
 rand = "0.8"
 serde = "1.0.229"
 log = "0.4.34"
+uuid = { version = "1.26.1", features = ["serde"] }

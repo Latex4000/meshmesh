@@ -14,6 +14,7 @@ use iroh_tickets::endpoint::EndpointTicket;
 use log::info;
 use std::sync::{Mutex, OnceLock};
 use tokio_util::codec::{FramedRead, FramedWrite};
+use uuid::Uuid;
 
 pub const ALPN: &[u8] = b"meshmesh/1";
 
@@ -125,7 +126,7 @@ pub async fn init() -> Result<(), Error> {
 }
 
 impl Peer {
-    pub async fn send_to(recipient: u8, data: String) -> Result<(), Error> {
+    pub async fn send_to(recipient: Uuid, data: String) -> Result<(), Error> {
         let ticket = use_ctx(|ctx| {
             let peer = ctx.peers.get(&recipient)?;
             Some(peer.ticket.clone())
@@ -167,7 +168,7 @@ impl Peer {
             return Err(SelfConnectingError);
         }
 
-        let ticket = match ticket.parse::<u8>() {
+        let ticket = match Uuid::try_parse(ticket) {
             Ok(peer_id) => use_ctx(|ctx| {
                 let peer = ctx.peers.get(&peer_id)?;
                 Some(peer.ticket.clone())

@@ -1,4 +1,5 @@
 mod app;
+
 use protocol::{
     error::Error,
     state::{
@@ -55,8 +56,9 @@ async fn command_line() -> Result<(), Error> {
                 if line.is_empty() {
                     return Ok(());
                 }
-                rl.add_history_entry(line)?;
-
+                if let Err(e) = rl.add_history_entry(line) {
+                    println!("Error occurred while adding history entry: {e}");
+                };
                 let mut parts = line.split_whitespace();
                 let cmd = parts.next().unwrap_or("");
                 let args: Vec<&str> = parts.collect();
@@ -67,12 +69,12 @@ async fn command_line() -> Result<(), Error> {
                     ),
                     "discover" => {
                         if let Err(e) = Peer::discover(&args.join(" ")).await {
-                            println!("{e}");
+                            println!("discover error: {e}");
                         }
                     }
                     "ping" => {
                         if let Err(e) = Peer::ping(&args.join(" ")).await {
-                            println!("{e}");
+                            println!("ping error: {e}");
                         }
                     }
                     "peers" => use_ctx(|ctx| {
@@ -83,15 +85,22 @@ async fn command_line() -> Result<(), Error> {
                     "cls" => clearscreen::clear().expect("failed to clear screen"),
                     "direct" => use_ctx(|ctx| match args.join(" ").parse() {
                         Ok(id) if ctx.peers.contains_key(&id) => ctx.window = Direct(id),
-                        Ok(id) => println!("You have not discovered peer ID {id}"),
-                        Err(e) => println!("Could not parse ID.\n{e}"),
+                        Ok(id) => {
+                            println!("direct error: You have not discovered peer ID {id}")
+                        }
+                        Err(e) => println!("direct error: Could not parse ID.\n{e}"),
                     }),
                     "clearpeers" => use_ctx(|ctx| ctx.peers.clear()),
-                    _ => match client_window {
-                        Lobby => lobby_cmds(line, cmd, args)?,
-                        Direct(_) => direct_cmds(line, cmd, args).await?,
-                        Room(_) => room_cmds(line, cmd, args)?,
-                    },
+                    _ => {
+                        let res = match client_window {
+                            Lobby => lobby_cmds(line, cmd, args),
+                            Direct(_) => direct_cmds(line, cmd, args).await,
+                            Room(_) => room_cmds(line, cmd, args),
+                        };
+                        if let Err(e) = res {
+                            println!("Error occured when matching wildcard: {e}");
+                        }
+                    }
                 }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
@@ -123,11 +132,14 @@ async fn direct_cmds(line: &str, cmd: &str, args: Vec<&str>) -> Result<(), Error
     match cmd {
         "exit" | "quit" => use_ctx(|ctx| ctx.window = Lobby),
         _ => {
-            if let Some(recipient) = get_recipient()
-                && let Err(e) = Peer::send_to(recipient, line.to_string()).await
-            {
-                println!("{e}");
-            }
+            let message_line = line.to_string();
+            tokio::spawn(async move {
+                if let Some(recipient) = get_recipient()
+                    && let Err(e) = Peer::send_to(recipient, message_line).await
+                {
+                    println!("direct message error: {e}");
+                }
+            });
         }
     }
     Ok(())

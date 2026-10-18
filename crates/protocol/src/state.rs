@@ -3,20 +3,18 @@ use std::{
     fmt::{Display, Formatter, Result},
 };
 
+use iroh::{EndpointAddr, EndpointId};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ClientWindow {
-    Lobby,
-    Direct(u8),
-    Room(u8),
+#[derive(Debug, Default)]
+pub(crate) struct State {
+    pub(crate) peers: HashMap<EndpointId, PeerInfo>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PeerInfo {
-    pub id: u8,
-    pub ticket: String,
+    pub id: EndpointId,
+    pub addr: Option<EndpointAddr>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -24,7 +22,6 @@ pub struct Peer {
     pub id: u8,
     pub ticket: String,
     pub rooms: [u8; 5],
-    pub window: ClientWindow,
     pub peers: HashMap<u8, PeerInfo>,
 }
 
@@ -37,15 +34,7 @@ impl Peer {
             id,
             ticket,
             rooms: [0, 0, 0, 0, 0],
-            window: ClientWindow::Lobby,
             peers: HashMap::new(),
-        }
-    }
-
-    pub fn get_info(&self) -> PeerInfo {
-        PeerInfo {
-            id: self.id,
-            ticket: self.ticket.clone(),
         }
     }
 }

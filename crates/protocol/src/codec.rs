@@ -1,11 +1,10 @@
 use futures::{SinkExt, StreamExt};
 use iroh::endpoint::{RecvStream, SendStream};
-use iroh_tickets::{Ticket, endpoint::EndpointTicket};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
-use crate::{ENDPOINT, error::Error};
+use crate::error::Error;
 
 pub type Tx = FramedWrite<SendStream, LengthDelimitedCodec>;
 pub type Rx = FramedRead<RecvStream, LengthDelimitedCodec>;
@@ -16,20 +15,6 @@ pub fn codec() -> LengthDelimitedCodec {
         .big_endian()
         .max_frame_length(1 << 20)
         .new_codec()
-}
-
-pub async fn open_stream(ticket: &str) -> Result<(Tx, Rx), Error> {
-    let ticket = EndpointTicket::decode_string(ticket)?;
-    let conn = ENDPOINT
-        .get()
-        .ok_or(Error::MissingEndpointError)?
-        .connect(ticket.endpoint_addr().clone(), crate::ALPN)
-        .await?;
-    let (send, recv) = conn.open_bi().await?;
-    Ok((
-        FramedWrite::new(send, codec()),
-        FramedRead::new(recv, codec()),
-    ))
 }
 
 pub async fn write_msg<T: Serialize>(tx: &mut Tx, msg: &T) -> Result<(), Error> {

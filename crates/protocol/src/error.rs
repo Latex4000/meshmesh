@@ -1,16 +1,10 @@
+use iroh::EndpointId;
 use thiserror::Error;
 
 use crate::format::Response;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    // own
-    #[error("Could not get/missing mutex")]
-    MissingMutexError,
-
-    #[error("Endpoint is missing in OnceCell")]
-    MissingEndpointError,
-
     #[error("Missing peer")]
     MissingPeerError,
 
@@ -22,9 +16,6 @@ pub enum Error {
 
     #[error("No response found")]
     NoResponseError,
-
-    #[error("Unknown error")]
-    Unknown,
 
     // iroh
     #[error("Could not bind via iroh")]
@@ -43,12 +34,21 @@ pub enum Error {
     #[error("Error from postcard")]
     PostcardError(#[from] postcard::Error),
 
-    #[error("Could not get default editor up")]
-    RustylineError(#[from] rustyline::error::ReadlineError),
-
-    #[error("IO error")]
+    #[error("IO error {0}")]
     IOError(#[from] std::io::Error),
 
     #[error("Contained futures join error")]
     FutureJoinError(#[from] tokio::task::JoinError),
+
+    #[error("unknown peer {0}")]
+    UnknownPeer(EndpointId),
+
+    #[error("protocol violation: {0}")]
+    Protocol(&'static str),
+
+    #[error("timed out")]
+    Timeout,
+
+    #[error("node is shut down")]
+    Shutdown,
 }
